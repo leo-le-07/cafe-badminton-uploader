@@ -11,6 +11,7 @@ env/
 # --- Configuration & Secrets (CRITICAL) ---
 .env
 client_secret.json
+token.json
 
 # --- Tool Caches (Ruff, MyPy, etc) ---
 .ruff_cache/
