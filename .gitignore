@@ -1,0 +1,31 @@
+# --- Python Standard ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual Environment (uv uses .venv) ---
+.venv/
+venv/
+env/
+
+# --- Configuration & Secrets (CRITICAL) ---
+.env
+
+# --- Tool Caches (Ruff, MyPy, etc) ---
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Build / Distribution (If you package this later) ---
+dist/
+build/
+*.egg-info/
+
+# --- IDEs / Editors ---
+.idea/
+.vscode/
+*.swp
+*.swo
+dump.rdb
