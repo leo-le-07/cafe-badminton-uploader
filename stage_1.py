@@ -49,8 +49,8 @@ def parse_filename(filename: str) -> dict[str, str]:
 
     metadata = {
         "match_type": match_type,
-        "team1": team1,
-        "team2": team2,
+        "team1Names": team1,
+        "team2Names": team2,
         "tournament": tournament,
     }
 
@@ -67,7 +67,7 @@ def create_title(metadata: dict) -> str:
     title = ""
 
     current_date = datetime.now().strftime("%d %b %Y")
-    teams = format_team_names(metadata["team1"], metadata["team2"])
+    teams = format_team_names(metadata["team1Names"], metadata["team2Names"])
 
     parts = [
         teams,
@@ -92,7 +92,7 @@ def create_tag(name: str) -> str:
 def create_description(metadata: dict) -> str:
     description = ""
     current_date = datetime.now().strftime("%d %b %Y")
-    teams = format_team_names(metadata["team1"], metadata["team2"])
+    teams = format_team_names(metadata["team1Names"], metadata["team2Names"])
     dynamic_tags = [
         f"#{create_tag(metadata['match_type'])}",
         f"#{create_tag(metadata['tournament'])}",

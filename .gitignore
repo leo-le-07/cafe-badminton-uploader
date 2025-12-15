@@ -31,3 +31,5 @@ build/
 *.swp
 *.swo
 dump.rdb
+
+input/

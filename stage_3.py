@@ -289,8 +289,9 @@ def render_thumbnail(video_folder: Path):
 
     with open(metadata_path, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-    title = metadata.get("title")
-    match_text = title.split("|")[0].strip().upper()
+    team1Names = metadata.get("team1Names")
+    team2Names = metadata.get("team2Names")
+    match_text = f"{'/'.join(team1Names).upper()} vs {'/'.join(team2Names).upper()}"
     tournament = metadata.get("tournament", "").strip()
     decor_style = STYLE_BLUE
 
