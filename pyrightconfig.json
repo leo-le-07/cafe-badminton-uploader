@@ -1,4 +1,10 @@
 {
   "venvPath": ".",
-  "venv": ".venv"
+  "venv": ".venv",
+  "reportUnusedVariable": "none",
+  "reportUnusedImport": "none",
+  "reportUnusedFunction": "none",
+  "reportUnusedClass": "none",
+  "disableOrganizeImports": true
 }
+

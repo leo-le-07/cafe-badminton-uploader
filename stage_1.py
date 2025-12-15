@@ -18,10 +18,12 @@ MATCH_TYPES = {
 FIXED_TAGS = "#sunbadminton #badminton #cafebadminton"
 
 
-def scan_videos(input_path: Path, extension: str = ".mov") -> Iterator[Path]:
-    videos = input_path.glob(f"*{extension}")
-
-    return videos
+def scan_videos(input_path: Path) -> Iterator[Path]:
+    return (
+        video
+        for video in input_path.iterdir()
+        if video.is_file() and video.suffix in {".mov", ".MOV"}
+    )
 
 
 def parse_filename(filename: str) -> dict[str, str]:
