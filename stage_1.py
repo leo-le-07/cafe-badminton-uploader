@@ -130,7 +130,7 @@ def create_frame_candidates(video_path: Path):
         raise IOError(f"Error opening video file: {video_path}")
 
     try:
-        output_dir = config.INPUT_DIR / video_path.stem
+        output_dir = config.INPUT_DIR / video_path.stem / "candidates"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
