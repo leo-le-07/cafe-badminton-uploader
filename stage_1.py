@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime
 
 import config
+import json
 
 MATCH_TYPES = {
     "ms": "Men's Singles",
@@ -106,5 +107,23 @@ def create_description(metadata: dict) -> str:
     return description
 
 
+def create_metadata_for_video(file_path: Path):
+    final_metadata = {}
+
+    metadata = parse_filename(file_path.name)
+    final_metadata["title"] = create_title(metadata)
+    final_metadata["description"] = create_description(metadata)
+
+    filename_without_ext = file_path.stem
+    metadata_path = Path(f"{config.INPUT_DIR}/{filename_without_ext}")
+    metadata_path.mkdir(parents=True, exist_ok=True)
+
+    with open(metadata_path / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(final_metadata, f, ensure_ascii=False, indent=4)
+
+
 if __name__ == "__main__":
-    scan_videos(config.INPUT_DIR)
+    videos = scan_videos(config.INPUT_DIR)
+
+    for video in videos:
+        create_metadata_for_video(video)
