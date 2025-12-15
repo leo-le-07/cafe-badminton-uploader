@@ -2,9 +2,10 @@ from pathlib import Path
 
 import numpy as np
 import config
-from PIL import Image, ImageEnhance, ImageDraw
+from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 from stage_1 import scan_videos, create_metadata_for_video, create_frame_candidates
 from stage_2 import select_thumbnail
+import json
 
 STYLE_BLUE = "blue"
 STYLE_PURPLE = "purple"
@@ -12,20 +13,26 @@ STYLE_WHITE = "white"
 
 BAR_STYLES = {
     STYLE_BLUE: {
-        "start": (0, 100, 220, 230),  # Deeper blue
-        "end": (0, 190, 255, 230),  # Cyan-blue
+        "start": (0, 60, 150, 240),
+        "end": (0, 140, 230, 240),
+        "text_color": (255, 255, 255, 255),
     },
     STYLE_PURPLE: {
-        "start": (40, 10, 60, 230),  # Dark Indigo
-        "end": (100, 30, 110, 230),  # Deep Purple
+        "start": (40, 10, 60, 230),
+        "end": (100, 30, 110, 230),
+        "text_color": (255, 255, 255, 255),
     },
     STYLE_WHITE: {
-        "start": (220, 220, 220, 240),  # Light Grey
-        "end": (255, 255, 255, 240),  # Bright White
+        "start": (220, 220, 220, 240),
+        "end": (255, 255, 255, 240),
+        "text_color": (20, 20, 20, 255),
     },
 }
 
+BAR_HEIGHT_RATIO = 0.18  # 18% of image height
+
 LOGO_PATH = Path("assets/logo.png")
+FONT_PATH = Path("assets/Montserrat-ExtraBold.ttf")
 
 
 def enhance_image_visuals(img_pil: Image.Image) -> Image.Image:
@@ -74,9 +81,7 @@ def draw_background_bar(
     color_start = style["start"]
     color_end = style["end"]
 
-    # How tall should the bar be relative to image height? (e.g., 18%)
-    bar_height_ratio = 0.18
-    bar_height = int(height * bar_height_ratio)
+    bar_height = int(height * BAR_HEIGHT_RATIO)
     bar_top_y = height - bar_height
 
     gradient_bar = Image.new("RGBA", (width, bar_height), color=0)
@@ -125,6 +130,154 @@ def add_logo(img_pil: Image.Image, logo_path: Path) -> Image.Image:
     return img_pil.convert("RGB")
 
 
+def draw_match_text(img_pil: Image.Image, text: str, style_name: str) -> Image.Image:
+    img_pil = img_pil.convert("RGBA")
+    width, height = img_pil.size
+    draw = ImageDraw.Draw(img_pil)
+
+    # 1. Get Text Color based on Style
+    style = BAR_STYLES.get(style_name, BAR_STYLES[STYLE_BLUE])
+    text_color = style["text_color"]
+
+    # 2. Calculate Text Area (Inside the bar)
+    bar_height = int(height * BAR_HEIGHT_RATIO)
+    # Center of the bar vertically
+    center_y = height - (bar_height / 2)
+    center_x = width / 2
+
+    # 3. Dynamic Font Sizing
+    # Start with a font size approx 60% of bar height
+    font_size = int(bar_height * 0.6)
+
+    try:
+        font = ImageFont.truetype(str(FONT_PATH), font_size)
+    except OSError:
+        print(f"Warning: Could not load font at {FONT_PATH}. Using default.")
+        font = ImageFont.load_default()
+
+    # Measure text size
+    # bbox gives (left, top, right, bottom)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+
+    # Max allowed width (90% of screen width)
+    max_width = width * 0.90
+
+    # Shrink font until it fits
+    while text_width > max_width and font_size > 10:
+        font_size -= 2
+        try:
+            font = ImageFont.truetype(str(FONT_PATH), font_size)
+        except OSError:
+            break
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+
+    # 4. Draw Text (Anchor 'mm' = Middle Middle)
+    # We draw it twice: once as a shadow/outline for readability, then the main text
+
+    # Shadow (Offset slightly) - Only needed if contrast is risky, but good for style
+    shadow_color = (0, 0, 0, 100)  # Faint shadow
+    draw.text(
+        (center_x + 3, center_y + 3), text, font=font, fill=shadow_color, anchor="mm"
+    )
+
+    # Main Text
+    draw.text((center_x, center_y), text, font=font, fill=text_color, anchor="mm")
+
+    return img_pil.convert("RGB")
+
+
+def draw_tournament_badge(
+    img_pil: Image.Image, tournament_name: str, style_name: str
+) -> Image.Image:
+    if not tournament_name:
+        return img_pil
+
+    img_pil = img_pil.convert("RGBA")
+    width, height = img_pil.size
+    draw = ImageDraw.Draw(img_pil)
+
+    # 1. Configuration from Style
+    style = BAR_STYLES.get(style_name, BAR_STYLES[STYLE_BLUE])
+    color_start = style["start"]
+    color_end = style["end"]
+    text_color = style["text_color"]
+
+    padding = int(width * 0.03)
+    font_size = int(width * 0.04)
+
+    try:
+        font = ImageFont.truetype(str(FONT_PATH), font_size)
+    except OSError:
+        font = ImageFont.load_default()
+
+    text = tournament_name.upper()
+
+    # 2. Calculate Badge Dimensions
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    badge_pad_x = int(font_size * 0.6)
+    badge_pad_y = int(font_size * 0.3)
+
+    # Force integer casting
+    badge_w = int(text_w + (badge_pad_x * 2))
+    badge_h = int(text_h + (badge_pad_y * 2))
+
+    # --- NEW: Define Tag Shape Tip Depth ---
+    # The depth of the pointy triangle tip. Half height looks proportional.
+    tip_depth = int(badge_h / 2)
+    # Add the tip depth to the overall width so the text area doesn't feel cramped
+    total_badge_w = badge_w + tip_depth
+
+    # 3. Create Gradient Badge (Off-screen canvas sized to total width)
+    badge_gradient = Image.new("RGBA", (total_badge_w, badge_h), color=0)
+    draw_grad = ImageDraw.Draw(badge_gradient)
+
+    # Draw gradient across the full width
+    for x in range(total_badge_w):
+        t = x / (total_badge_w - 1) if total_badge_w > 1 else 0
+        r = int(color_start[0] * (1 - t) + color_end[0] * t)
+        g = int(color_start[1] * (1 - t) + color_end[1] * t)
+        b = int(color_start[2] * (1 - t) + color_end[2] * t)
+        a = int(color_start[3] * (1 - t) + color_end[3] * t)
+        draw_grad.line([(x, 0), (x, badge_h)], fill=(r, g, b, a))
+
+    # 4. Create Tag Polygon Mask
+    mask = Image.new("L", (total_badge_w, badge_h), 0)
+    draw_mask = ImageDraw.Draw(mask)
+
+    # Define vertices for a tag shape pointing right:
+    # Flat on left, pointed on right.
+    points = [
+        (0, 0),  # Top-Left
+        (0, badge_h),  # Bottom-Left
+        (total_badge_w - tip_depth, badge_h),  # Bottom-Right shoulder
+        (total_badge_w, int(badge_h / 2)),  # The pointy tip
+        (total_badge_w - tip_depth, 0),  # Top-Right shoulder
+    ]
+    # Draw filled white polygon on black mask
+    draw_mask.polygon(points, fill=255)
+
+    # 5. Composite Badge onto Main Image
+    # x1 = 0 means it's flush with the left edge of the screen
+    x1 = 0
+    y1 = padding
+    img_pil.paste(badge_gradient, (x1, y1), mask)
+
+    # 6. Draw Text
+    # Visually center the text in the rectangular part of the tag (ignoring the tip)
+    rectangular_part_w = total_badge_w - tip_depth
+    text_x = x1 + (rectangular_part_w / 2)
+    text_y = y1 + (badge_h / 2)
+
+    draw.text((text_x, text_y), text, font=font, fill=text_color, anchor="mm")
+
+    return img_pil.convert("RGB")
+
+
 def render_thumbnail(video_folder: Path):
     selected_path = video_folder / "selected.jpg"
     metadata_path = video_folder / "metadata.json"
@@ -134,10 +287,19 @@ def render_thumbnail(video_folder: Path):
         print(f"Missing selected thumbnail or metadata in {video_folder.name}")
         return
 
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+    title = metadata.get("title")
+    match_text = title.split("|")[0].strip().upper()
+    tournament = metadata.get("tournament", "").strip()
+    decor_style = STYLE_BLUE
+
     img = Image.open(selected_path)
     img = enhance_image_visuals(img)
-    img = draw_background_bar(img, STYLE_WHITE)
+    img = draw_background_bar(img, decor_style)
+    img = draw_match_text(img, match_text, decor_style)
     img = add_logo(img, LOGO_PATH)
+    img = draw_tournament_badge(img, tournament, decor_style)
 
     img.save(output_path, quality=95)
 

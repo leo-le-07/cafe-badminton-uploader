@@ -112,17 +112,15 @@ def create_description(metadata: dict) -> str:
 
 
 def create_metadata_for_video(video_path: Path):
-    final_metadata = {}
-
     metadata = parse_filename(video_path.name)
-    final_metadata["title"] = create_title(metadata)
-    final_metadata["description"] = create_description(metadata)
+    metadata["title"] = create_title(metadata)
+    metadata["description"] = create_description(metadata)
 
     output_dir = config.INPUT_DIR / video_path.stem
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with open(output_dir / "metadata.json", "w", encoding="utf-8") as f:
-        json.dump(final_metadata, f, ensure_ascii=False, indent=4)
+        json.dump(metadata, f, ensure_ascii=False, indent=4)
 
 
 def create_frame_candidates(video_path: Path):
