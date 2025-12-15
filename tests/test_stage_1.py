@@ -1,6 +1,12 @@
 import pytest
+from freezegun import freeze_time
 
-from stage_1 import parse_filename
+
+from stage_1 import (
+    parse_filename,
+    format_team_names,
+    create_title,
+)
 
 
 @pytest.mark.parametrize(
@@ -85,3 +91,41 @@ def test_parse_filename_valid(filename, expected):
 def test_parse_filename_invalid(filename, error_match):
     with pytest.raises(ValueError, match=error_match):
         parse_filename(filename)
+
+
+@pytest.mark.parametrize(
+    "team1, team2, separator, expected",
+    [
+        (["Leo"], ["Khanh"], "/", "Leo vs Khanh"),
+        (["Den", "Tu"], ["Huy", "Ha"], None, "Den/Tu vs Huy/Ha"),
+        (["Den", "Tu"], ["Huy", "Ha"], " & ", "Den & Tu vs Huy & Ha"),
+        (["Leo"], ["Huy", "Ha"], "/", "Leo vs Huy/Ha"),
+    ],
+)
+def test_format_team_names(team1, team2, separator, expected):
+    if separator:
+        result = format_team_names(team1, team2, separator)
+    else:
+        result = format_team_names(team1, team2)
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [
+        (
+            {
+                "match_type": "Men's Singles",
+                "team1": ["Anh"],
+                "team2": ["Linh"],
+                "tournament": "Winter League",
+            },
+            "Anh vs Linh | Winter League (01 Jan 2023)",
+        )
+    ],
+)
+@freeze_time("2023-01-01")
+def test_create_title(metadata, expected):
+    result = create_title(metadata)
+
+    assert result == expected
