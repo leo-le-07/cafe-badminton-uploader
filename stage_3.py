@@ -25,6 +25,8 @@ BAR_STYLES = {
     },
 }
 
+LOGO_PATH = Path("assets/logo.png")
+
 
 def enhance_image_visuals(img_pil: Image.Image) -> Image.Image:
     # --- 1. Vibrancy & Contrast ---
@@ -97,6 +99,32 @@ def draw_background_bar(
     return final_img.convert("RGB")
 
 
+def add_logo(img_pil: Image.Image, logo_path: Path) -> Image.Image:
+    if not logo_path.exists():
+        print(f"Logo file not found: {logo_path}")
+        return img_pil
+
+    img_pil = img_pil.convert("RGBA")
+    logo = Image.open(logo_path).convert("RGBA")
+
+    # Resize Logo (Responsive: 10% of image width)
+    target_width = int(img_pil.width * 0.10)
+    aspect_ratio = logo.height / logo.width
+    target_height = int(target_width * aspect_ratio)
+
+    logo = logo.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+    # Calculate Position (Top Right with Padding)
+    padding = int(img_pil.width * 0.03)  # 3% padding from edges
+    x = img_pil.width - target_width - padding
+    y = padding
+
+    # Paste (Using the logo itself as the alpha mask)
+    img_pil.paste(logo, (x, y), logo)
+
+    return img_pil.convert("RGB")
+
+
 def render_thumbnail(video_folder: Path):
     selected_path = video_folder / "selected.jpg"
     metadata_path = video_folder / "metadata.json"
@@ -109,6 +137,8 @@ def render_thumbnail(video_folder: Path):
     img = Image.open(selected_path)
     img = enhance_image_visuals(img)
     img = draw_background_bar(img, STYLE_WHITE)
+    img = add_logo(img, LOGO_PATH)
+
     img.save(output_path, quality=95)
 
     print(f"Rendered thumbnail saved to {output_path}")
