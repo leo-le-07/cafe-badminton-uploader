@@ -4,6 +4,8 @@ from datetime import datetime
 
 import config
 import json
+import cv2
+import numpy as np
 
 MATCH_TYPES = {
     "ms": "Men's Singles",
@@ -107,19 +109,53 @@ def create_description(metadata: dict) -> str:
     return description
 
 
-def create_metadata_for_video(file_path: Path):
+def create_metadata_for_video(video_path: Path):
     final_metadata = {}
 
-    metadata = parse_filename(file_path.name)
+    metadata = parse_filename(video_path.name)
     final_metadata["title"] = create_title(metadata)
     final_metadata["description"] = create_description(metadata)
 
-    filename_without_ext = file_path.stem
-    metadata_path = Path(f"{config.INPUT_DIR}/{filename_without_ext}")
-    metadata_path.mkdir(parents=True, exist_ok=True)
+    output_dir = config.INPUT_DIR / video_path.stem
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(metadata_path / "metadata.json", "w", encoding="utf-8") as f:
+    with open(output_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(final_metadata, f, ensure_ascii=False, indent=4)
+
+
+def create_frame_candidates(video_path: Path):
+    cap = cv2.VideoCapture(str(video_path.resolve()))
+
+    if not cap.isOpened():
+        raise IOError(f"Error opening video file: {video_path}")
+
+    try:
+        output_dir = config.INPUT_DIR / video_path.stem
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames == 0:
+            raise ValueError(f"Video file has zero frames: {video_path}")
+
+        frame_indices = np.linspace(
+            0, total_frames - 1, config.CANDIDATE_THUMBNAIL_NUM, dtype=int
+        )
+
+        for i, frame_idx in enumerate(frame_indices):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+
+            if not ret:
+                print(f"Warning: Could not read frame {frame_idx} from {video_path}")
+                continue
+
+            file_name = f"frame_{frame_idx}.jpg"
+            out_path = output_dir / file_name
+
+            cv2.imwrite(str(out_path), frame)
+
+    finally:
+        cap.release()
 
 
 if __name__ == "__main__":
@@ -127,3 +163,4 @@ if __name__ == "__main__":
 
     for video in videos:
         create_metadata_for_video(video)
+        create_frame_candidates(video)
