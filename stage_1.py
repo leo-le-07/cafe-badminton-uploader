@@ -16,6 +16,7 @@ MATCH_TYPES = {
 }
 
 FIXED_TAGS = "#sunbadminton #badminton #cafebadminton"
+CATEGORY_SPORTS = "17"
 
 
 def scan_videos(input_path: Path) -> Iterator[Path]:
@@ -115,6 +116,8 @@ def create_metadata_for_video(video_path: Path):
     metadata = parse_filename(video_path.name)
     metadata["title"] = create_title(metadata)
     metadata["description"] = create_description(metadata)
+    metadata["category"] = CATEGORY_SPORTS
+    metadata["privacyStatus"] = config.VIDEO_PRIVACY_STATUS
 
     output_dir = config.INPUT_DIR / video_path.stem
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -156,6 +159,10 @@ def create_frame_candidates(video_path: Path):
 
     finally:
         cap.release()
+
+
+def get_workspace_dir(video_path: Path) -> Path:
+    return config.INPUT_DIR / video_path.stem
 
 
 if __name__ == "__main__":

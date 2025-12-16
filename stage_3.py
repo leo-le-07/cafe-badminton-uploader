@@ -124,7 +124,7 @@ def add_logo(img_pil: Image.Image, logo_path: Path) -> Image.Image:
     x = img_pil.width - target_width - padding
     y = padding
 
-    # Paste (Using the logo itself as the alpha mask)
+    # Paste (Using the logo itself as the alpha mask)stage3
     img_pil.paste(logo, (x, y), logo)
 
     return img_pil.convert("RGB")
@@ -278,13 +278,13 @@ def draw_tournament_badge(
     return img_pil.convert("RGB")
 
 
-def render_thumbnail(video_folder: Path):
-    selected_path = video_folder / "selected.jpg"
-    metadata_path = video_folder / "metadata.json"
-    output_path = video_folder / "thumbnail.jpg"
+def render_thumbnail(workspace_dir: Path):
+    selected_path = workspace_dir / "selected.jpg"
+    metadata_path = workspace_dir / "metadata.json"
+    output_path = workspace_dir / "thumbnail.jpg"
 
     if not selected_path.exists() or not metadata_path.exists():
-        print(f"Missing selected thumbnail or metadata in {video_folder.name}")
+        print(f"Missing selected thumbnail or metadata in {workspace_dir.name}")
         return
 
     with open(metadata_path, "r", encoding="utf-8") as f:

@@ -3,13 +3,13 @@ from pathlib import Path
 import cv2
 import shutil
 
-from stage_1 import scan_videos
+from stage_1 import get_workspace_dir, scan_videos
 
 
 def select_thumbnail(video_file: Path):
-    video_name = video_file.stem
-    video_folder = config.INPUT_DIR / video_name
-    candidate_dir = video_folder / "candidates"
+    video_stem = video_file.stem
+    workspace_dir = get_workspace_dir(video_file)
+    candidate_dir = workspace_dir / "candidates"
     images = list(candidate_dir.glob("frame_*.jpg"))
 
     if not images:
@@ -22,11 +22,11 @@ def select_thumbnail(video_file: Path):
     total_images = len(images)
     selected_image = None
 
-    window_name = f"Select Thumbnail for {video_name}"
+    window_name = f"Select Thumbnail for {video_stem}"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
 
-    print(f"\n--- Selecting thumbnail for: {video_name} ---")
+    print(f"\n--- Selecting thumbnail for: {video_stem} ---")
     print("Controls: [A/D]=Nav  [Enter]=Select  [S]=Default(Middle)")
 
     while True:
@@ -40,7 +40,7 @@ def select_thumbnail(video_file: Path):
         display_img = img.copy()
         cv2.putText(
             display_img,
-            f"Video: {video_name}",
+            f"Video: {video_stem}",
             (30, 60),
             cv2.FONT_HERSHEY_SIMPLEX,
             1.2,
@@ -71,7 +71,7 @@ def select_thumbnail(video_file: Path):
     cv2.destroyWindow(window_name)
 
     if selected_image:
-        selected_path = video_folder / "selected.jpg"
+        selected_path = workspace_dir / "selected.jpg"
         shutil.copyfile(selected_image, selected_path)
         print(f"Selected frame saved to: {selected_path}")
 
