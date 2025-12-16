@@ -11,7 +11,7 @@ API_SERVICE_NAME = "youtube"
 API_VERSION = "v3"
 
 
-def authenticate_youtube():
+def get_youtube_client():
     credentials = None
     if os.path.isfile(TOKEN_FILE):
         credentials = Credentials.from_authorized_user_file(TOKEN_FILE)

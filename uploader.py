@@ -1,11 +1,12 @@
 from googleapiclient.http import MediaFileUpload
-import json
-from auth_service import authenticate_youtube
+from auth_service import get_client
 import config
-from stage_1 import CATEGORY_SPORTS, get_workspace_dir, scan_videos
+from stage_1 import CATEGORY_SPORTS, scan_videos
 from pathlib import Path
 from tqdm import tqdm
 from typing import Any
+
+from utils import get_metadata, get_thumbnail_path
 
 CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
 
@@ -88,22 +89,23 @@ def set_thumbnail(youtube_client: Any, video_id: str, thumbnail_path: Path) -> b
     return "error" not in response
 
 
-if __name__ == "__main__":
+def run():
     video_paths = list(scan_videos(config.INPUT_DIR))
     video_paths = filter_ready_upload(video_paths)
-    youtube_client = authenticate_youtube()
+    client = get_client()
 
     for video_path in video_paths:
-        workspace_dir = get_workspace_dir(video_path)
-        metadata_path = workspace_dir / "metadata.json"
-        thumbnail_path = workspace_dir / "thumbnail.jpg"
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
+        thumbnail_path = get_thumbnail_path(video_path)
+        metadata = get_metadata(video_path)
 
-        video_id = upload(youtube_client, video_path, metadata)
+        video_id = upload(client, video_path, metadata)
 
         if not video_id:
             print(f"Upload video failed {video_path}")
             continue
 
-        set_thumbnail(youtube_client, video_id, thumbnail_path)
+        set_thumbnail(client, video_id, thumbnail_path)
+
+
+if __name__ == "__main__":
+    run()

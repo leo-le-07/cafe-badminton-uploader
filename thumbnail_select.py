@@ -3,17 +3,17 @@ from pathlib import Path
 import cv2
 import shutil
 
-from stage_1 import get_workspace_dir, scan_videos
+from utils import get_selected_candidate_path, scan_videos, get_candidate_dir
 
 
-def select_thumbnail(video_file: Path):
-    video_stem = video_file.stem
-    workspace_dir = get_workspace_dir(video_file)
-    candidate_dir = workspace_dir / "candidates"
+def select_thumbnail(video_path: Path):
+    video_stem = video_path.stem
+    candidate_dir = get_candidate_dir(video_path)
+
     images = list(candidate_dir.glob("frame_*.jpg"))
 
     if not images:
-        print(f"No candidate thumbnails found for {video_file.name}")
+        print(f"No candidate thumbnails found for {video_path.name}")
         return
 
     images.sort(key=lambda p: int(p.stem.split("_")[1]))
@@ -71,13 +71,16 @@ def select_thumbnail(video_file: Path):
     cv2.destroyWindow(window_name)
 
     if selected_image:
-        selected_path = workspace_dir / "selected.jpg"
+        selected_path = get_selected_candidate_path(video_path)
         shutil.copyfile(selected_image, selected_path)
-        print(f"Selected frame saved to: {selected_path}")
 
 
-if __name__ == "__main__":
+def run():
     videos = scan_videos(config.INPUT_DIR)
 
     for video_file in videos:
         select_thumbnail(video_file)
+
+
+if __name__ == "__main__":
+    run()

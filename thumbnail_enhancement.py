@@ -3,9 +3,13 @@ from pathlib import Path
 import numpy as np
 import config
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
-from stage_1 import scan_videos, create_metadata_for_video, create_frame_candidates
-from stage_2 import select_thumbnail
-import json
+
+from utils import (
+    scan_videos,
+    get_metadata,
+    get_rendered_thumbnail_path,
+    get_selected_candidate_path,
+)
 
 STYLE_BLUE = "blue"
 STYLE_PURPLE = "purple"
@@ -130,7 +134,7 @@ def add_logo(img_pil: Image.Image, logo_path: Path) -> Image.Image:
     return img_pil.convert("RGB")
 
 
-def draw_match_text(img_pil: Image.Image, text: str, style_name: str) -> Image.Image:
+def draw_matchup_text(img_pil: Image.Image, text: str, style_name: str) -> Image.Image:
     img_pil = img_pil.convert("RGBA")
     width, height = img_pil.size
     draw = ImageDraw.Draw(img_pil)
@@ -278,27 +282,27 @@ def draw_tournament_badge(
     return img_pil.convert("RGB")
 
 
-def render_thumbnail(workspace_dir: Path):
-    selected_path = workspace_dir / "selected.jpg"
-    metadata_path = workspace_dir / "metadata.json"
-    output_path = workspace_dir / "thumbnail.jpg"
+def render_thumbnail(video_path: Path):
+    selected_path = get_selected_candidate_path(video_path)
+    output_path = get_rendered_thumbnail_path(video_path)
+    metadata = get_metadata(video_path)
 
-    if not selected_path.exists() or not metadata_path.exists():
-        print(f"Missing selected thumbnail or metadata in {workspace_dir.name}")
+    if not selected_path.exists() or not metadata:
+        print(f"Missing selected thumbnail or metadata in {video_path.name}")
         return
 
-    with open(metadata_path, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-    team1Names = metadata.get("team1Names")
-    team2Names = metadata.get("team2Names")
-    match_text = f"{'/'.join(team1Names).upper()} vs {'/'.join(team2Names).upper()}"
+    team_1_names = metadata.get("team1Names")
+    team_2_names = metadata.get("team2Names")
+    matchup_text = (
+        f"{'/'.join(team_1_names).upper()} vs {'/'.join(team_2_names).upper()}"
+    )
     tournament = metadata.get("tournament", "").strip()
     decor_style = STYLE_BLUE
 
     img = Image.open(selected_path)
     img = enhance_image_visuals(img)
     img = draw_background_bar(img, decor_style)
-    img = draw_match_text(img, match_text, decor_style)
+    img = draw_matchup_text(img, matchup_text, decor_style)
     img = add_logo(img, LOGO_PATH)
     img = draw_tournament_badge(img, tournament, decor_style)
 
@@ -307,16 +311,12 @@ def render_thumbnail(workspace_dir: Path):
     print(f"Rendered thumbnail saved to {output_path}")
 
 
-if __name__ == "__main__":
+def run():
     videos = list(scan_videos(config.INPUT_DIR))
 
-    for video_file in videos:
-        create_metadata_for_video(video_file)
-        create_frame_candidates(video_file)
+    for video_path in videos:
+        render_thumbnail(video_path)
 
-    for video_file in videos:
-        select_thumbnail(video_file)
 
-    for video_file in videos:
-        workspace_folder = config.INPUT_DIR / video_file.stem
-        render_thumbnail(workspace_folder)
+if __name__ == "__main__":
+    run()

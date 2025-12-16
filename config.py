@@ -23,13 +23,9 @@ def get_env_path(var_name: str, create_if_missing: bool = False) -> Path:
 
 
 INPUT_DIR = get_env_path("INPUT_DIR", create_if_missing=True)
-COMPLETED_DIR = get_env_path("COMPLETED_DIR", create_if_missing=True)
-CANDIDATE_THUMBNAIL_NUM = int(os.getenv("CANDIDATE_THUMBNAIL_NUM", "5"))
-VIDEO_PRIVACY_STATUS = os.getenv("VIDEO_PRIVACY_STATUS", "private")
 
-__all__ = [
-    "INPUT_DIR",
-    "COMPLETED_DIR",
-    "CANDIDATE_THUMBNAIL_NUM",
-    "VIDEO_PRIVACY_STATUS",
-]
+COMPLETED_DIR = get_env_path("COMPLETED_DIR", create_if_missing=True)
+
+CANDIDATE_THUMBNAIL_NUM = int(os.getenv("CANDIDATE_THUMBNAIL_NUM", 10))
+
+VIDEO_PRIVACY_STATUS = os.getenv("VIDEO_PRIVACY_STATUS", "private")

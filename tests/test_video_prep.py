@@ -2,10 +2,10 @@ import pytest
 from freezegun import freeze_time
 
 
-from stage_1 import (
+from video_prep import (
     parse_filename,
-    format_team_names,
     create_title,
+    _format_team_names,
 )
 
 
@@ -16,9 +16,9 @@ from stage_1 import (
         (
             "ms_LeovsKhanh.mp4",
             {
-                "match_type": "Men's Singles",
-                "team1": ["Leo"],
-                "team2": ["Khanh"],
+                "matchType": "Men's Singles",
+                "team1Names": ["Leo"],
+                "team2Names": ["Khanh"],
                 "tournament": "Cafe Game",
             },
         ),
@@ -26,9 +26,9 @@ from stage_1 import (
         (
             "ws_AnhvsMai.mp4",
             {
-                "match_type": "Women's Singles",
-                "team1": ["Anh"],
-                "team2": ["Mai"],
+                "matchType": "Women's Singles",
+                "team1Names": ["Anh"],
+                "team2Names": ["Mai"],
                 "tournament": "Cafe Game",
             },
         ),
@@ -36,9 +36,9 @@ from stage_1 import (
         (
             "md_DenzTuvsHuyzHa.mp4",
             {
-                "match_type": "Men's Doubles",
-                "team1": ["Den", "Tu"],
-                "team2": ["Huy", "Ha"],
+                "matchType": "Men's Doubles",
+                "team1Names": ["Den", "Tu"],
+                "team2Names": ["Huy", "Ha"],
                 "tournament": "Cafe Game",
             },
         ),
@@ -46,9 +46,9 @@ from stage_1 import (
         (
             "wd_AnhzMaivsLinhzHoa.mp4",
             {
-                "match_type": "Women's Doubles",
-                "team1": ["Anh", "Mai"],
-                "team2": ["Linh", "Hoa"],
+                "matchType": "Women's Doubles",
+                "team1Names": ["Anh", "Mai"],
+                "team2Names": ["Linh", "Hoa"],
                 "tournament": "Cafe Game",
             },
         ),
@@ -56,9 +56,9 @@ from stage_1 import (
         (
             "xd_DenzAnhvsHuyzMai_Sunbad Tour Game.mp4",
             {
-                "match_type": "Mixed Doubles",
-                "team1": ["Den", "Anh"],
-                "team2": ["Huy", "Mai"],
+                "matchType": "Mixed Doubles",
+                "team1Names": ["Den", "Anh"],
+                "team2Names": ["Huy", "Mai"],
                 "tournament": "Sunbad Tour Game",
             },
         ),
@@ -66,9 +66,9 @@ from stage_1 import (
         (
             "ms_LeovsKhanh_Summer Cup 2024.mp4",
             {
-                "match_type": "Men's Singles",
-                "team1": ["Leo"],
-                "team2": ["Khanh"],
+                "matchType": "Men's Singles",
+                "team1Names": ["Leo"],
+                "team2Names": ["Khanh"],
                 "tournament": "Summer Cup 2024",
             },
         ),
@@ -104,9 +104,9 @@ def test_parse_filename_invalid(filename, error_match):
 )
 def test_format_team_names(team1, team2, separator, expected):
     if separator:
-        result = format_team_names(team1, team2, separator)
+        result = _format_team_names(team1, team2, separator)
     else:
-        result = format_team_names(team1, team2)
+        result = _format_team_names(team1, team2)
     assert result == expected
 
 
@@ -115,9 +115,9 @@ def test_format_team_names(team1, team2, separator, expected):
     [
         (
             {
-                "match_type": "Men's Singles",
-                "team1": ["Anh"],
-                "team2": ["Linh"],
+                "matchType": "Men's Singles",
+                "team1Names": ["Anh"],
+                "team2Names": ["Linh"],
                 "tournament": "Winter League",
             },
             "Anh vs Linh | Winter League (01 Jan 2023)",

@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from pathlib import Path
 from datetime import datetime
 
@@ -6,6 +5,8 @@ import config
 import json
 import cv2
 import numpy as np
+import constants
+import utils
 
 MATCH_TYPES = {
     "ms": "Men's Singles",
@@ -16,15 +17,6 @@ MATCH_TYPES = {
 }
 
 FIXED_TAGS = "#sunbadminton #badminton #cafebadminton"
-CATEGORY_SPORTS = "17"
-
-
-def scan_videos(input_path: Path) -> Iterator[Path]:
-    return (
-        video
-        for video in input_path.iterdir()
-        if video.is_file() and video.suffix in {".mov", ".MOV"}
-    )
 
 
 def parse_filename(filename: str) -> dict[str, str]:
@@ -49,7 +41,7 @@ def parse_filename(filename: str) -> dict[str, str]:
     tournament = (parts[2] if len(parts) > 2 else "cafe game").title()
 
     metadata = {
-        "match_type": match_type,
+        "matchType": match_type,
         "team1Names": team1,
         "team2Names": team2,
         "tournament": tournament,
@@ -58,7 +50,7 @@ def parse_filename(filename: str) -> dict[str, str]:
     return metadata
 
 
-def format_team_names(team1: list[str], team2: list[str], separator: str = "/") -> str:
+def _format_team_names(team1: list[str], team2: list[str], separator: str = "/") -> str:
     team1_str = separator.join(team1)
     team2_str = separator.join(team2)
     return f"{team1_str} vs {team2_str}"
@@ -68,7 +60,7 @@ def create_title(metadata: dict) -> str:
     title = ""
 
     current_date = datetime.now().strftime("%d %b %Y")
-    teams = format_team_names(metadata["team1Names"], metadata["team2Names"])
+    teams = _format_team_names(metadata["team1Names"], metadata["team2Names"])
 
     parts = [
         teams,
@@ -92,10 +84,10 @@ def create_tag(name: str) -> str:
 
 def create_description(metadata: dict) -> str:
     description = ""
-    current_date = datetime.now().strftime("%d %b %Y")
-    teams = format_team_names(metadata["team1Names"], metadata["team2Names"])
+    current_date = datetime.now().strftime(constants.DATE_FORMAT)
+    teams = _format_team_names(metadata["team1Names"], metadata["team2Names"])
     dynamic_tags = [
-        f"#{create_tag(metadata['match_type'])}",
+        f"#{create_tag(metadata['matchType'])}",
         f"#{create_tag(metadata['tournament'])}",
     ]
 
@@ -104,7 +96,7 @@ def create_description(metadata: dict) -> str:
         all_tags,
         "",  # Extra newline after tags
         f"{metadata['tournament']} ({current_date})",
-        metadata["match_type"],
+        metadata["matchType"],
         teams,
     ]
 
@@ -116,13 +108,12 @@ def create_metadata_for_video(video_path: Path):
     metadata = parse_filename(video_path.name)
     metadata["title"] = create_title(metadata)
     metadata["description"] = create_description(metadata)
-    metadata["category"] = CATEGORY_SPORTS
+    metadata["category"] = constants.CATEGORY_SPORTS
     metadata["privacyStatus"] = config.VIDEO_PRIVACY_STATUS
 
-    output_dir = config.INPUT_DIR / video_path.stem
-    output_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path = utils.get_metadata_path(video_path)
 
-    with open(output_dir / "metadata.json", "w", encoding="utf-8") as f:
+    with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=4)
 
 
@@ -133,8 +124,8 @@ def create_frame_candidates(video_path: Path):
         raise IOError(f"Error opening video file: {video_path}")
 
     try:
-        output_dir = config.INPUT_DIR / video_path.stem / "candidates"
-        output_dir.mkdir(parents=True, exist_ok=True)
+        candidates_dir = utils.get_candidate_dir(video_path)
+        candidates_dir.mkdir(parents=True, exist_ok=True)
 
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if total_frames == 0:
@@ -153,7 +144,7 @@ def create_frame_candidates(video_path: Path):
                 continue
 
             file_name = f"frame_{frame_idx}.jpg"
-            out_path = output_dir / file_name
+            out_path = candidates_dir / file_name
 
             cv2.imwrite(str(out_path), frame)
 
@@ -161,13 +152,13 @@ def create_frame_candidates(video_path: Path):
         cap.release()
 
 
-def get_workspace_dir(video_path: Path) -> Path:
-    return config.INPUT_DIR / video_path.stem
-
-
-if __name__ == "__main__":
-    videos = scan_videos(config.INPUT_DIR)
+def run():
+    videos = utils.scan_videos(config.INPUT_DIR)
 
     for video in videos:
         create_metadata_for_video(video)
         create_frame_candidates(video)
+
+
+if __name__ == "__main__":
+    run()
