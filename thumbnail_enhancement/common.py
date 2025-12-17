@@ -5,6 +5,36 @@ from PIL import Image, ImageEnhance
 
 LOGO_PATH = Path("assets/logo.png")
 
+STYLE_BLUE = "blue"
+STYLE_PURPLE = "purple"
+STYLE_WHITE = "white"
+
+RECOGNIZED_TOURNAMENTS = {
+    "cafe game": STYLE_BLUE,
+    "friendly game": STYLE_WHITE,
+    "tournament": STYLE_PURPLE,
+}
+
+DEFAULT_THEME = STYLE_BLUE
+
+
+def get_theme_for_tournament(tournament_name: str) -> str:
+    if not tournament_name:
+        return DEFAULT_THEME
+
+    normalized = tournament_name.lower().strip()
+    return RECOGNIZED_TOURNAMENTS.get(normalized, DEFAULT_THEME)
+
+
+def format_team_name(team_names: list[str]) -> str:
+    return " / ".join(team_names).upper()
+
+
+def format_matchup_text(team1_names: list[str], team2_names: list[str]) -> str:
+    team1 = format_team_name(team1_names)
+    team2 = format_team_name(team2_names)
+    return f"{team1} vs {team2}"
+
 
 def enhance_image_visuals(img_pil: Image.Image) -> Image.Image:
     enhancer_color = ImageEnhance.Color(img_pil)

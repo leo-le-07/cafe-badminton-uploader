@@ -26,7 +26,7 @@ def get_candidate_dir(video_path: Path) -> Path:
 
 
 def get_metadata_path(video_path: Path) -> Path:
-    return get_candidate_dir(video_path) / METADATA_FILE
+    return get_workspace_dir(video_path) / METADATA_FILE
 
 
 def get_selected_candidate_path(video_path: Path) -> Path:

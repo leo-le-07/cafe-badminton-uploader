@@ -10,12 +10,14 @@ TEMPLATES = {
     "template_b": template_b,
 }
 
-DEFAULT_TEMPLATE = "template_a"
+DEFAULT_TEMPLATE = "template_b"
 
 
 def get_template_module(template_name: str):
     if template_name not in TEMPLATES:
-        raise ValueError(f"Unknown template: {template_name}. Available templates: {list(TEMPLATES.keys())}")
+        raise ValueError(
+            f"Unknown template: {template_name}. Available templates: {list(TEMPLATES.keys())}"
+        )
     return TEMPLATES[template_name]
 
 
@@ -29,4 +31,3 @@ def run(template_name: str = DEFAULT_TEMPLATE):
 
     for video_path in videos:
         render_thumbnail(video_path, template_name)
-

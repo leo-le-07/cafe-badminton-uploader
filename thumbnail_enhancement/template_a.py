@@ -3,12 +3,17 @@ from pathlib import Path
 import random
 from PIL import Image, ImageDraw, ImageFont
 
-from thumbnail_enhancement.common import LOGO_PATH, add_logo, enhance_image_visuals
+from thumbnail_enhancement.common import (
+    LOGO_PATH,
+    STYLE_BLUE,
+    STYLE_PURPLE,
+    STYLE_WHITE,
+    add_logo,
+    enhance_image_visuals,
+    format_matchup_text,
+    get_theme_for_tournament,
+)
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
-
-STYLE_BLUE = "blue"
-STYLE_PURPLE = "purple"
-STYLE_WHITE = "white"
 
 BAR_STYLES = {
     STYLE_BLUE: {
@@ -29,14 +34,6 @@ BAR_STYLES = {
 }
 
 BAR_HEIGHT_RATIO = 0.18
-
-RECOGNIZED_TOURNAMENTS = {
-    "cafe game": STYLE_BLUE,
-    "friendly game": STYLE_WHITE,
-    "tournament": STYLE_PURPLE,
-}
-
-DEFAULT_THEME = STYLE_BLUE
 
 FONT_PATH = Path("assets/Montserrat-ExtraBold.ttf")
 
@@ -233,14 +230,6 @@ def draw_tournament_badge(
     return img_pil.convert("RGB")
 
 
-def get_theme_for_tournament(tournament_name: str) -> str:
-    if not tournament_name:
-        return DEFAULT_THEME
-
-    normalized = tournament_name.lower().strip()
-    return RECOGNIZED_TOURNAMENTS.get(normalized, DEFAULT_THEME)
-
-
 def render_thumbnail(video_path: Path):
     selected_path = get_selected_candidate_path(video_path)
     output_path = get_thumbnail_path(video_path)
@@ -252,9 +241,7 @@ def render_thumbnail(video_path: Path):
 
     team_1_names = metadata.get("team1Names")
     team_2_names = metadata.get("team2Names")
-    matchup_text = (
-        f"{'/'.join(team_1_names).upper()} vs {'/'.join(team_2_names).upper()}"
-    )
+    matchup_text = format_matchup_text(team_1_names, team_2_names)
     tournament = metadata.get("tournament", "").strip()
     decor_style = get_theme_for_tournament(tournament)
 
@@ -268,4 +255,3 @@ def render_thumbnail(video_path: Path):
     img.save(output_path, quality=95)
 
     print(f"{output_path}")
-

@@ -104,7 +104,7 @@ def create_description(metadata: dict) -> str:
     return description
 
 
-def create_metadata_for_video(video_path: Path):
+def create_and_store_metadata(video_path: Path):
     metadata = parse_filename(video_path.name)
     metadata["title"] = create_title(metadata)
     metadata["description"] = create_description(metadata)
@@ -156,7 +156,7 @@ def run():
     videos = utils.scan_videos(config.INPUT_DIR)
 
     for video in videos:
-        create_metadata_for_video(video)
+        create_and_store_metadata(video)
         create_frame_candidates(video)
 
 
