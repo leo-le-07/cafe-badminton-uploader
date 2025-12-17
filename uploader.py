@@ -1,12 +1,12 @@
 from googleapiclient.http import MediaFileUpload
 from auth_service import get_client
 import config
-from stage_1 import CATEGORY_SPORTS, scan_videos
+import constants
 from pathlib import Path
 from tqdm import tqdm
 from typing import Any
 
-from utils import get_metadata, get_thumbnail_path
+from utils import get_metadata, get_thumbnail_path, scan_videos
 
 CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
 
@@ -14,25 +14,21 @@ CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
 def filter_ready_upload(video_paths: list[Path]) -> list[Path]:
     result = []
 
-    for video_file in video_paths:
-        workspace_dir = config.INPUT_DIR / video_file.stem
-        if not workspace_dir.is_dir():
+    for video_path in video_paths:
+        metadata = get_metadata(video_path)
+        thumbnail_path = get_thumbnail_path(video_path)
+
+        if not metadata or not thumbnail_path.exists():
             continue
 
-        metadata_path = workspace_dir / "metadata.json"
-        thumbnail_path = workspace_dir / "thumbnail.jpg"
-
-        if not metadata_path.exists() or not thumbnail_path.exists():
-            continue
-
-        result.append(video_file)
+        result.append(video_path)
 
     return result
 
 
 def upload(youtube_client: Any, video_path: Path, metadata: dict) -> str | None:
     result = None
-    category = metadata.get("category", CATEGORY_SPORTS)
+    category = metadata.get("category", constants.CATEGORY_SPORTS)
     description = metadata.get("description", "")
     title = metadata.get("title", video_path.stem)
     privacy_status = metadata.get("privacyStatus", "private")

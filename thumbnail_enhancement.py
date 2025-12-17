@@ -5,9 +5,9 @@ import config
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 
 from utils import (
+    get_thumbnail_path,
     scan_videos,
     get_metadata,
-    get_rendered_thumbnail_path,
     get_selected_candidate_path,
 )
 
@@ -284,7 +284,7 @@ def draw_tournament_badge(
 
 def render_thumbnail(video_path: Path):
     selected_path = get_selected_candidate_path(video_path)
-    output_path = get_rendered_thumbnail_path(video_path)
+    output_path = get_thumbnail_path(video_path)
     metadata = get_metadata(video_path)
 
     if not selected_path.exists() or not metadata:

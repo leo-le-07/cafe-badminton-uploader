@@ -26,7 +26,7 @@ Step 4: Render Typography Calculate the optimal font size so long names fit perf
 
 Step 5: Export Final Combine all layers and save the high-quality result as thumbnail_final.jpg in the video's folder.
 
-### Stage 3: Autonomous Upload (Bot Only)
+### Stage 4: Autonomous Upload (Bot Only)
 * **Trigger:** User runs `run_upload.py`.
 * **Loop:** The script iterates through approved workspaces.
     1.  **Upload:** Pushes video and generated thumbnail to YouTube using `metadata.json`.

@@ -33,7 +33,7 @@ def get_selected_candidate_path(video_path: Path) -> Path:
     return get_workspace_dir(video_path) / SELECTED_CANDIDATE_NAME
 
 
-def get_rendered_thumbnail_path(video_path: Path) -> Path:
+def get_thumbnail_path(video_path: Path) -> Path:
     return get_workspace_dir(video_path) / RENDERED_THUMBNAIL_NAME
 
 
