@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import random
 import config
 from PIL import Image, ImageEnhance, ImageDraw, ImageFont
 
@@ -33,7 +34,15 @@ BAR_STYLES = {
     },
 }
 
-BAR_HEIGHT_RATIO = 0.18  # 18% of image height
+BAR_HEIGHT_RATIO = 0.18 # 18% of image height
+
+RECOGNIZED_TOURNAMENTS = {
+    "cafe game": STYLE_BLUE,
+    "friendly game": STYLE_WHITE,
+    "tournament": STYLE_PURPLE,
+}
+
+DEFAULT_THEME = STYLE_BLUE
 
 LOGO_PATH = Path("assets/logo.png")
 FONT_PATH = Path("assets/Montserrat-ExtraBold.ttf")
@@ -78,31 +87,94 @@ def enhance_image_visuals(img_pil: Image.Image) -> Image.Image:
 def draw_background_bar(
     img_pil: Image.Image, style_name: str = STYLE_BLUE
 ) -> Image.Image:
+    """
+    Draws a low-poly (faceted crystal) background bar instead of a simple gradient.
+    """
     img_pil = img_pil.convert("RGBA")
     width, height = img_pil.size
 
+    # 1. Get Style Configuration
     style = BAR_STYLES.get(style_name, BAR_STYLES[STYLE_BLUE])
     color_start = style["start"]
     color_end = style["end"]
 
+    # 2. Dimensions
     bar_height = int(height * BAR_HEIGHT_RATIO)
     bar_top_y = height - bar_height
 
-    gradient_bar = Image.new("RGBA", (width, bar_height), color=0)
-    draw = ImageDraw.Draw(gradient_bar)
+    # 3. Low Poly Grid Settings
+    # We create a grid of points and "jitter" them to make irregular triangles
+    cols = 10  # Number of horizontal segments
+    rows = 2  # Number of vertical segments
+    cell_w = width / cols
+    cell_h = bar_height / rows
 
-    for x in range(width):
-        t = x / (width - 1) if width > 1 else 0
+    # Generate Grid Points
+    vertices = []
+    for r in range(rows + 1):
+        row_points = []
+        for c in range(cols + 1):
+            # Base grid position
+            x = c * cell_w
+            y = r * cell_h
 
-        r = int(color_start[0] * (1 - t) + color_end[0] * t)
-        g = int(color_start[1] * (1 - t) + color_end[1] * t)
-        b = int(color_start[2] * (1 - t) + color_end[2] * t)
-        a = int(color_start[3] * (1 - t) + color_end[3] * t)
+            # Add random "Jitter" to inner points to make it look organic
+            # We don't jitter the edges so the bar stays a perfect rectangle
+            if 0 < c < cols and 0 < r < rows:
+                x += random.uniform(-cell_w * 0.3, cell_w * 0.3)
+                y += random.uniform(-cell_h * 0.3, cell_h * 0.3)
 
-        draw.line([(x, 0), (x, bar_height)], fill=(r, g, b, a))
+            row_points.append((x, y))
+        vertices.append(row_points)
 
+    # 4. Draw Triangles onto a separate layer
+    poly_bar = Image.new("RGBA", (width, bar_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(poly_bar)
+
+    for r in range(rows):
+        for c in range(cols):
+            # Get the 4 points of the grid cell
+            p1 = vertices[r][c]  # Top-Left
+            p2 = vertices[r][c + 1]  # Top-Right
+            p3 = vertices[r + 1][c + 1]  # Bottom-Right
+            p4 = vertices[r + 1][c]  # Bottom-Left
+
+            # Calculate base color based on horizontal position (Gradient logic)
+            center_x = (p1[0] + p2[0]) / 2
+            t = center_x / width  # 0.0 to 1.0
+
+            # Interpolate between start and end color
+            red = int(color_start[0] * (1 - t) + color_end[0] * t)
+            green = int(color_start[1] * (1 - t) + color_end[1] * t)
+            blue = int(color_start[2] * (1 - t) + color_end[2] * t)
+            alpha = int(color_start[3] * (1 - t) + color_end[3] * t)
+
+            # --- The "Low Poly" Magic: Randomize Brightness ---
+            # We create two slightly different colors for the two triangles in the square
+            noise_intensity = 25  # How much the color varies (facet effect)
+
+            # Helper to add noise safely
+            def get_faceted_color(r, g, b, a, noise):
+                n = random.randint(-noise, noise)
+                return (
+                    max(0, min(255, r + n)),
+                    max(0, min(255, g + n)),
+                    max(0, min(255, b + n)),
+                    a,
+                )
+
+            color1 = get_faceted_color(red, green, blue, alpha, noise_intensity)
+            color2 = get_faceted_color(red, green, blue, alpha, noise_intensity)
+
+            # Draw two triangles to fill the cell
+            # Triangle 1 (Top-Left, Top-Right, Bottom-Left)
+            draw.polygon([p1, p2, p4], fill=color1)
+            # Triangle 2 (Top-Right, Bottom-Right, Bottom-Left)
+            draw.polygon([p2, p3, p4], fill=color2)
+
+    # 5. Composite
     overlay = Image.new("RGBA", img_pil.size, (0, 0, 0, 0))
-    overlay.paste(gradient_bar, (0, bar_top_y))
+    overlay.paste(poly_bar, (0, bar_top_y))
     final_img = Image.alpha_composite(img_pil, overlay)
 
     return final_img.convert("RGB")
@@ -282,6 +354,14 @@ def draw_tournament_badge(
     return img_pil.convert("RGB")
 
 
+def get_theme_for_tournament(tournament_name: str) -> str:
+    if not tournament_name:
+        return DEFAULT_THEME
+    
+    normalized = tournament_name.lower().strip()
+    return RECOGNIZED_TOURNAMENTS.get(normalized, DEFAULT_THEME)
+
+
 def render_thumbnail(video_path: Path):
     selected_path = get_selected_candidate_path(video_path)
     output_path = get_thumbnail_path(video_path)
@@ -297,7 +377,7 @@ def render_thumbnail(video_path: Path):
         f"{'/'.join(team_1_names).upper()} vs {'/'.join(team_2_names).upper()}"
     )
     tournament = metadata.get("tournament", "").strip()
-    decor_style = STYLE_BLUE
+    decor_style = get_theme_for_tournament(tournament)
 
     img = Image.open(selected_path)
     img = enhance_image_visuals(img)
@@ -308,7 +388,7 @@ def render_thumbnail(video_path: Path):
 
     img.save(output_path, quality=95)
 
-    print(f"Rendered thumbnail saved to {output_path}")
+    print(f"{output_path}")
 
 
 def run():

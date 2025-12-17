@@ -5,20 +5,36 @@ import constants
 from pathlib import Path
 from tqdm import tqdm
 from typing import Any
-
-from utils import get_metadata, get_thumbnail_path, scan_videos
+from datetime import datetime
+import json
+from utils import (
+    get_metadata,
+    get_thumbnail_path,
+    get_upload_record_path,
+    scan_videos,
+    get_metadata_path,
+)
 
 CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
 
 
-def filter_ready_upload(video_paths: list[Path]) -> list[Path]:
+def get_videos_ready_for_upload(video_paths: list[Path]) -> list[Path]:
     result = []
 
     for video_path in video_paths:
-        metadata = get_metadata(video_path)
-        thumbnail_path = get_thumbnail_path(video_path)
+        if get_upload_record_path(video_path).exists():
+            continue
 
-        if not metadata or not thumbnail_path.exists():
+        metadata_path = get_metadata_path(video_path)
+        thumbnail_path = get_thumbnail_path(video_path)
+        if not metadata_path.exists() or not thumbnail_path.exists():
+            continue
+
+        try:
+            metadata = get_metadata(video_path)
+            if not metadata:
+                continue
+        except (FileNotFoundError, json.JSONDecodeError):
             continue
 
         result.append(video_path)
@@ -85,9 +101,22 @@ def set_thumbnail(youtube_client: Any, video_id: str, thumbnail_path: Path) -> b
     return "error" not in response
 
 
+def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool):
+    upload_record_path = get_upload_record_path(video_path)
+    upload_record = {
+        "videoId": video_id,
+        "uploadedAt": datetime.now().isoformat(),
+        "thumbnailSet": thumbnail_set,
+        "youtubeLink": f"https://youtu.be/{video_id}",
+    }
+
+    with open(upload_record_path, "w", encoding="utf-8") as f:
+        json.dump(upload_record, f, ensure_ascii=False, indent=4)
+
+
 def run():
     video_paths = list(scan_videos(config.INPUT_DIR))
-    video_paths = filter_ready_upload(video_paths)
+    video_paths = get_videos_ready_for_upload(video_paths)
     client = get_client()
 
     for video_path in video_paths:
@@ -100,7 +129,8 @@ def run():
             print(f"Upload video failed {video_path}")
             continue
 
-        set_thumbnail(client, video_id, thumbnail_path)
+        thumbnail_set = set_thumbnail(client, video_id, thumbnail_path)
+        save_upload_record(video_path, video_id, thumbnail_set)
 
 
 if __name__ == "__main__":

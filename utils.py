@@ -43,3 +43,7 @@ def get_metadata(video_path: Path):
         metadata = json.load(f)
 
     return metadata
+
+
+def get_upload_record_path(video_path: Path) -> Path:
+    return get_workspace_dir(video_path) / "upload.json"
