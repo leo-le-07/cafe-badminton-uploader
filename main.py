@@ -5,6 +5,7 @@ from video_prep import run as run_video_prep
 from thumbnail_select import run as run_thumbnail_select
 from thumbnail_enhancement.renderer import run as run_thumbnail_enhancement
 from uploader import run as run_uploader
+from cleanup import cleanup_uploaded_videos
 
 
 def stage_prepare(args):
@@ -27,7 +28,7 @@ def stage_enhance(args):
     print("=" * 60)
     print("Stage 3: Thumbnail Enhancement")
     print("=" * 60)
-    template_name = getattr(args, "template", "template_a")
+    template_name = getattr(args, "template", "template_b")
     run_thumbnail_enhancement(template_name=template_name)
     print("Completed\n")
 
@@ -40,12 +41,21 @@ def stage_upload(args):
     print("Completed\n")
 
 
+def stage_cleanup(args):
+    print("=" * 60)
+    print("Cleanup: Move uploaded videos to completed directory")
+    print("=" * 60)
+    cleanup_uploaded_videos()
+    print("Completed\n")
+
+
 def stage_all(args):
     stages = [
         ("prepare", stage_prepare),
         ("select", stage_select),
         ("enhance", stage_enhance),
         ("upload", stage_upload),
+        ("cleanup", stage_cleanup),
     ]
 
     for stage_name, stage_func in stages:
@@ -75,6 +85,7 @@ Examples:
   python main.py select
   python main.py enhance
   python main.py upload
+  python main.py cleanup
 
   # Get help for a specific stage
   python main.py prepare --help
@@ -118,6 +129,13 @@ Examples:
         description="Stage 4: Upload videos and thumbnails to YouTube",
     )
     parser_upload.set_defaults(func=stage_upload)
+
+    parser_cleanup = subparsers.add_parser(
+        "cleanup",
+        help="Cleanup: move uploaded videos to completed directory",
+        description="Move uploaded videos and their folders to COMPLETED_DIR",
+    )
+    parser_cleanup.set_defaults(func=stage_cleanup)
 
     parser_all = subparsers.add_parser(
         "all",

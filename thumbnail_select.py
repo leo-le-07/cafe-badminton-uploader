@@ -69,6 +69,7 @@ def select_thumbnail(video_path: Path):
             break
 
     cv2.destroyWindow(window_name)
+    cv2.waitKey(1)  # Give OpenCV 1ms to process the window destruction
 
     if selected_image:
         selected_path = get_selected_candidate_path(video_path)
@@ -80,6 +81,9 @@ def run():
 
     for video_file in videos:
         select_thumbnail(video_file)
+
+    cv2.destroyAllWindows()
+    cv2.waitKey(1)
 
 
 if __name__ == "__main__":

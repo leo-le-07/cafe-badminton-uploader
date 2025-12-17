@@ -156,6 +156,9 @@ def run():
     videos = utils.scan_videos(config.INPUT_DIR)
 
     for video in videos:
+        workspace_dir = utils.get_workspace_dir(video)
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+
         create_and_store_metadata(video)
         create_frame_candidates(video)
 

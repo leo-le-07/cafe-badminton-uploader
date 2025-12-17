@@ -84,6 +84,7 @@ def upload(youtube_client: Any, video_path: Path, metadata: dict) -> str | None:
             pbar.update(current_progress - previous_progress)
             previous_progress = current_progress
 
+    pbar.update(total_size - previous_progress)
     pbar.close()
 
     result = response.get("id")
