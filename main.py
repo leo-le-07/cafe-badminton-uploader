@@ -3,7 +3,10 @@ import sys
 
 from video_prep import run as run_video_prep
 from thumbnail_selector import run as run_thumbnail_select
-from thumbnail_enhancement.renderer import DEFAULT_TEMPLATE, run as run_thumbnail_enhancement
+from thumbnail_enhancement.renderer import (
+    DEFAULT_TEMPLATE,
+    run as run_thumbnail_enhancement,
+)
 from uploader import run as run_uploader
 from cleanup import cleanup_uploaded_videos
 
@@ -117,9 +120,9 @@ Examples:
     )
     parser_enhance.add_argument(
         "--template",
-        default="template_a",
+        default=DEFAULT_TEMPLATE,
         choices=["template_a", "template_b"],
-        help="Thumbnail template to use (default: template_a)",
+        help="Thumbnail template to use (default: template_b)",
     )
     parser_enhance.set_defaults(func=stage_enhance)
 
