@@ -2,8 +2,8 @@ import argparse
 import sys
 
 from video_prep import run as run_video_prep
-from thumbnail_select import run as run_thumbnail_select
-from thumbnail_enhancement.renderer import run as run_thumbnail_enhancement
+from thumbnail_selector import run as run_thumbnail_select
+from thumbnail_enhancement.renderer import DEFAULT_TEMPLATE, run as run_thumbnail_enhancement
 from uploader import run as run_uploader
 from cleanup import cleanup_uploaded_videos
 
@@ -28,7 +28,7 @@ def stage_enhance(args):
     print("=" * 60)
     print("Stage 3: Thumbnail Enhancement")
     print("=" * 60)
-    template_name = getattr(args, "template", "template_b")
+    template_name = getattr(args, "template", DEFAULT_TEMPLATE)
     run_thumbnail_enhancement(template_name=template_name)
     print("Completed\n")
 

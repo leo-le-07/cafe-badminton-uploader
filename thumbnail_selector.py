@@ -27,7 +27,7 @@ def select_thumbnail(video_path: Path):
     cv2.resizeWindow(window_name, 1280, 720)
 
     print(f"\n--- Selecting thumbnail for: {video_stem} ---")
-    print("Controls: [A/D]=Nav  [Enter]=Select  [S]=Default(Middle)")
+    print("Controls: [H/L]=Nav  [Enter]=Select  [S]=Default(Middle)")
 
     while True:
         img_path = images[current_idx]
@@ -57,10 +57,10 @@ def select_thumbnail(video_path: Path):
 
         key = cv2.waitKey(0) & 0xFF
 
-        if key in [ord("d"), 83]:  # 'd' or Right Arrow
+        if key in [ord("l"), 83]:  # 'l' or Right Arrow
             current_idx = (current_idx + 1) % total_images
 
-        elif key in [ord("a"), 81]:  # 'a' or Left Arrow
+        elif key in [ord("h"), 81]:  # 'h' or Left Arrow
             current_idx = (current_idx - 1 + total_images) % total_images
 
         elif key in [ord("s"), 13]:  # Enter or 's' -> SELECT
