@@ -3,7 +3,7 @@ import sys
 
 from video_prep import run as run_video_prep
 from thumbnail_select import run as run_thumbnail_select
-from thumbnail_enhancement import run as run_thumbnail_enhancement
+from thumbnail_enhancement.renderer import run as run_thumbnail_enhancement
 from uploader import run as run_uploader
 
 
@@ -27,7 +27,8 @@ def stage_enhance(args):
     print("=" * 60)
     print("Stage 3: Thumbnail Enhancement")
     print("=" * 60)
-    run_thumbnail_enhancement()
+    template_name = getattr(args, "template", "template_a")
+    run_thumbnail_enhancement(template_name=template_name)
     print("Completed\n")
 
 
@@ -98,11 +99,16 @@ Examples:
     )
     parser_select.set_defaults(func=stage_select)
 
-    # Stage: enhance
     parser_enhance = subparsers.add_parser(
         "enhance",
         help="Enhance thumbnails: render final thumbnail with graphics",
         description="Stage 3: Enhance selected thumbnail with graphics and text",
+    )
+    parser_enhance.add_argument(
+        "--template",
+        default="template_a",
+        choices=["template_a", "template_b"],
+        help="Thumbnail template to use (default: template_a)",
     )
     parser_enhance.set_defaults(func=stage_enhance)
 
