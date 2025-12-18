@@ -1,3 +1,4 @@
+from schemas import MatchMetadata
 from pathlib import Path
 from datetime import datetime
 
@@ -19,13 +20,11 @@ MATCH_TYPES = {
 FIXED_TAGS = "#sunbadminton #badminton #cafebadminton"
 
 
-def parse_filename(filename: str) -> dict[str, str]:
-    filepath = Path(filename)
-    name = filepath.stem
-    parts = name.split("_")
+def parse_filename(video_stem: str) -> tuple[str, str, list[str], list[str]]:
+    parts = video_stem.split("_")
 
     if len(parts) < 2:
-        raise ValueError(f"Invalid filename format: {filename}")
+        raise ValueError(f"Invalid filename format: {video_stem}")
 
     match_type_acronym = parts[0].lower()
     if match_type_acronym not in MATCH_TYPES:
@@ -40,14 +39,7 @@ def parse_filename(filename: str) -> dict[str, str]:
 
     tournament = (parts[2] if len(parts) > 2 else "cafe game").title()
 
-    metadata = {
-        "matchType": match_type,
-        "team1Names": team1,
-        "team2Names": team2,
-        "tournament": tournament,
-    }
-
-    return metadata
+    return tournament, match_type, team1, team2
 
 
 def _format_team_names(team1: list[str], team2: list[str], separator: str = "/") -> str:
@@ -56,15 +48,16 @@ def _format_team_names(team1: list[str], team2: list[str], separator: str = "/")
     return f"{team1_str} vs {team2_str}"
 
 
-def create_title(metadata: dict) -> str:
+def create_title(
+    tournament: str, team1: list[str], team2: list[str], match_date_str: str
+) -> str:
     title = ""
 
-    current_date = datetime.now().strftime("%d %b %Y")
-    teams = _format_team_names(metadata["team1Names"], metadata["team2Names"])
+    teams = _format_team_names(team1, team2)
 
     parts = [
         teams,
-        f"{metadata['tournament']} ({current_date})",
+        f"{tournament} ({match_date_str})",
     ]
 
     title = " | ".join(parts)
@@ -72,7 +65,7 @@ def create_title(metadata: dict) -> str:
     return title
 
 
-def create_tag(name: str) -> str:
+def _create_tag(name: str) -> str:
     tag = name.lower()
     tag = tag.replace("men's", "mens").replace("women's", "womens")
     tag = tag.replace("'s", "").replace("'", "")
@@ -82,21 +75,26 @@ def create_tag(name: str) -> str:
     return tag
 
 
-def create_description(metadata: dict) -> str:
+def create_description(
+    tournament: str,
+    match_type: str,
+    team1: list[str],
+    team2: list[str],
+    match_date_str: str,
+) -> str:
     description = ""
-    current_date = datetime.now().strftime(constants.DATE_FORMAT)
-    teams = _format_team_names(metadata["team1Names"], metadata["team2Names"])
+    teams = _format_team_names(team1, team2)
     dynamic_tags = [
-        f"#{create_tag(metadata['matchType'])}",
-        f"#{create_tag(metadata['tournament'])}",
+        f"#{_create_tag(match_type)}",
+        f"#{_create_tag(tournament)}",
     ]
 
     all_tags = f"{FIXED_TAGS} {' '.join(dynamic_tags)}"
     parts = [
         all_tags,
-        "",  # Extra newline after tags
-        f"{metadata['tournament']} ({current_date})",
-        metadata["matchType"],
+        "",
+        f"{tournament} ({match_date_str})",
+        match_type,
         teams,
     ]
 
@@ -104,36 +102,54 @@ def create_description(metadata: dict) -> str:
     return description
 
 
-def create_and_store_metadata(video_path: Path):
-    metadata = parse_filename(video_path.name)
-    metadata["title"] = create_title(metadata)
-    metadata["description"] = create_description(metadata)
-    metadata["category"] = constants.CATEGORY_SPORTS
-    metadata["privacyStatus"] = config.VIDEO_PRIVACY_STATUS
+def calculate_frame_indices(total_frames: int, num_candidates: int) -> np.ndarray:
+    if total_frames < 0:
+        raise ValueError("Video must have at least one frame")
+    return np.linspace(0, total_frames - 1, num_candidates, dtype=int)
 
+
+def create_metadata(video_path: Path) -> MatchMetadata:
+    video_stem = video_path.stem
+    current_date = datetime.now().strftime("%Y-%m-%d")
+
+    tournament, match_type, team1, team2 = parse_filename(video_stem)
+    title = create_title(tournament, team1, team2, current_date)
+    description = create_description(tournament, match_type, team1, team2, current_date)
+
+    metadata: MatchMetadata = {
+        "matchType": match_type,
+        "team1Names": team1,
+        "team2Names": team2,
+        "tournament": tournament,
+        "title": title,
+        "description": description,
+        "category": constants.CATEGORY_SPORTS,
+        "privacyStatus": config.VIDEO_PRIVACY_STATUS,
+    }
+
+    return metadata
+
+
+def store(video_path, metadata: MatchMetadata) -> None:
     metadata_path = utils.get_metadata_path(video_path)
 
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=4)
 
 
-def create_frame_candidates(video_path: Path):
+def create_frame_candidates(
+    video_path: Path, output_dir: Path, num_candidates: int
+) -> None:
     cap = cv2.VideoCapture(str(video_path.resolve()))
 
     if not cap.isOpened():
         raise IOError(f"Error opening video file: {video_path}")
 
     try:
-        candidates_dir = utils.get_candidate_dir(video_path)
-        candidates_dir.mkdir(parents=True, exist_ok=True)
-
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames == 0:
-            raise ValueError(f"Video file has zero frames: {video_path}")
+        frame_indices = calculate_frame_indices(total_frames, num_candidates)
 
-        frame_indices = np.linspace(
-            0, total_frames - 1, config.CANDIDATE_THUMBNAIL_NUM, dtype=int
-        )
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         for i, frame_idx in enumerate(frame_indices):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -143,9 +159,7 @@ def create_frame_candidates(video_path: Path):
                 print(f"Warning: Could not read frame {frame_idx} from {video_path}")
                 continue
 
-            file_name = f"frame_{frame_idx}.jpg"
-            out_path = candidates_dir / file_name
-
+            out_path = output_dir / f"frame_{frame_idx}.jpg"
             cv2.imwrite(str(out_path), frame)
 
     finally:
@@ -155,12 +169,21 @@ def create_frame_candidates(video_path: Path):
 def run():
     videos = utils.scan_videos(config.INPUT_DIR)
 
-    for video in videos:
-        workspace_dir = utils.get_workspace_dir(video)
+    for video_path in videos:
+        workspace_dir = utils.get_workspace_dir(video_path)
         workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        create_and_store_metadata(video)
-        create_frame_candidates(video)
+        try:
+            metadata = create_metadata(video_path)
+            store(video_path, metadata)
+        except ValueError as e:
+            print(f"Skipping {video_path.name}: {e}")
+            continue
+
+        candidate_dir = utils.get_candidate_dir(video_path)
+        create_frame_candidates(
+            video_path, candidate_dir, config.CANDIDATE_THUMBNAIL_NUM
+        )
 
 
 if __name__ == "__main__":
