@@ -9,7 +9,7 @@ venv/
 env/
 
 # --- Configuration & Secrets (CRITICAL) ---
-.env
+.env.*
 client_secret.json
 token.json
 

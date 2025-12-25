@@ -19,24 +19,25 @@ class RankedImage:
     rank: int
 
 
-POSITIVE_PROMPTS = [
-    "badminton smash",
-    "badminton jump smash",
-    "badminton net kill",
-    "badminton defensive dive",
-    "badminton fast rally",
-    "badminton doubles rally",
-    "professional badminton match",
-]
-
-NEGATIVE_PROMPTS = [
-    "empty badminton court",
-    "badminton players standing still",
-    "badminton players walking",
-    "badminton audience crowd",
-    "person walking across the frame",
-    "out of focus photo",
-]
+@dataclass(frozen=True)
+class PromptCategories:
+    positive: tuple[str, ...] = (
+        "badminton smash",
+        "badminton jump smash",
+        "badminton net kill",
+        "badminton defensive dive",
+        "badminton fast rally",
+        "badminton doubles rally",
+        "professional badminton match",
+    )
+    negative: tuple[str, ...] = (
+        "empty badminton court",
+        "badminton players standing still",
+        "badminton players walking",
+        "badminton audience crowd",
+        "person walking across the frame",
+        "out of focus photo",
+    )
 
 
 def get_device() -> str:
@@ -46,8 +47,7 @@ def get_device() -> str:
 def calculate_clip_scores(
     metrics_list: list[ImageMetrics],
     config: CLIPConfig,
-    positive_prompts=POSITIVE_PROMPTS,
-    negative_prompts=NEGATIVE_PROMPTS,
+    prompt_categories: PromptCategories,
 ) -> list[RankedImage]:
     model, preprocess = clip.load(config.model_name, config.device)
 
@@ -55,8 +55,12 @@ def calculate_clip_scores(
         preprocess(Image.open(metrics.path)).unsqueeze(0) for metrics in metrics_list
     ]
     batched_image_tensor = torch.cat(images).to(config.device)
-    batched_positive_texts_tensor = clip.tokenize(positive_prompts).to(config.device)
-    batched_negative_texts_tensor = clip.tokenize(negative_prompts).to(config.device)
+    batched_positive_texts_tensor = clip.tokenize(prompt_categories.positive).to(
+        config.device
+    )
+    batched_negative_texts_tensor = clip.tokenize(prompt_categories.negative).to(
+        config.device
+    )
 
     with torch.no_grad():
         image_features = model.encode_image(batched_image_tensor)
@@ -94,8 +98,11 @@ def rank_images(
 ) -> list[RankedImage]:
     device = get_device()
     config = CLIPConfig(device=device)
+    prompt_categories = PromptCategories()
     ranked = calculate_clip_scores(
-        metrics_list, config, POSITIVE_PROMPTS, NEGATIVE_PROMPTS
+        metrics_list,
+        config,
+        prompt_categories,
     )
 
     return ranked
