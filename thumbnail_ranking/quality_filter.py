@@ -10,11 +10,11 @@ from PIL import Image
 
 @dataclass(frozen=True)
 class QualityThresholds:
-    min_brightness: float = 140.0
+    min_brightness: float = 110.0
     max_brightness: float = 210.0
-    min_contrast: float = 40.0
+    min_contrast: float = 38.0
     min_sharpness: float = 120.0
-    min_edge_density: float = 0.08
+    min_edge_density: float = 0.07
     dup_distance: int = 8
 
 
@@ -149,4 +149,3 @@ def remove_duplicate_images(
             unique_metrics.append(current_metrics)
 
     return unique_metrics
-

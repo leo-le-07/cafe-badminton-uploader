@@ -28,4 +28,6 @@ COMPLETED_DIR = get_env_path("COMPLETED_DIR", create_if_missing=True)
 
 CANDIDATE_THUMBNAIL_NUM = int(os.getenv("CANDIDATE_THUMBNAIL_NUM", 10))
 
+TOP_RANKED_CANDIDATES_NUM = int(os.getenv("TOP_RANKED_CANDIDATES_NUM", 5))
+
 VIDEO_PRIVACY_STATUS = os.getenv("VIDEO_PRIVACY_STATUS", "private")

@@ -3,17 +3,17 @@ from pathlib import Path
 import cv2
 import shutil
 
-from utils import get_selected_candidate_path, scan_videos, get_candidate_dir
+from utils import get_selected_candidate_path, scan_videos, get_top_candidates_dir
 
 
 def select_thumbnail(video_path: Path):
     video_stem = video_path.stem
-    candidate_dir = get_candidate_dir(video_path)
+    top_candidates_dir = get_top_candidates_dir(video_path)
 
-    images = list(candidate_dir.glob("frame_*.jpg"))
+    images = list(top_candidates_dir.glob("*.jpg"))
 
     if not images:
-        print(f"No candidate thumbnails found for {video_path.name}")
+        print(f"No top candidates found for {video_path.name}")
         return
 
     images.sort(key=lambda p: int(p.stem.split("_")[1]))
@@ -27,7 +27,8 @@ def select_thumbnail(video_path: Path):
     cv2.resizeWindow(window_name, 1280, 720)
 
     print(f"\n--- Selecting thumbnail for: {video_stem} ---")
-    print("Controls: [H/L]=Nav  [Enter]=Select  [S]=Default(Middle)")
+    print(f"Showing top {total_images} ranked candidates")
+    print("Controls: [H/L]=Nav  [Enter]=Select  [S]=Default(First)")
 
     while True:
         img_path = images[current_idx]

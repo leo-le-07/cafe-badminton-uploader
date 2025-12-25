@@ -3,7 +3,7 @@ from PIL import Image
 import clip
 from dataclasses import dataclass
 
-from thumbnail_selection.quality_filter import ImageMetrics
+from thumbnail_ranking.quality_filter import ImageMetrics
 
 
 @dataclass(frozen=True)
