@@ -62,20 +62,13 @@ def stage_cleanup(args):
 
 
 def stage_all(args):
-    # stages = [
-    #     ("prepare", stage_prepare),
-    #     ("rank", stage_rank),
-    #     ("select", stage_select),
-    #     ("enhance", stage_enhance),
-    #     ("upload", stage_upload),
-    #     ("cleanup", stage_cleanup),
-    # ]
-
     stages = [
         ("prepare", stage_prepare),
         ("rank", stage_rank),
         ("select", stage_select),
         ("enhance", stage_enhance),
+        ("upload", stage_upload),
+        ("cleanup", stage_cleanup),
     ]
 
     for stage_name, stage_func in stages:

@@ -3,12 +3,16 @@ from pathlib import Path
 import cv2
 import shutil
 
-from utils import get_selected_candidate_path, scan_videos, get_top_candidates_dir
+from utils import (
+    get_selected_candidate_path,
+    scan_videos,
+    get_top_ranked_candidates_dir,
+)
 
 
 def select_thumbnail(video_path: Path):
     video_stem = video_path.stem
-    top_candidates_dir = get_top_candidates_dir(video_path)
+    top_candidates_dir = get_top_ranked_candidates_dir(video_path)
 
     images = list(top_candidates_dir.glob("*.jpg"))
 

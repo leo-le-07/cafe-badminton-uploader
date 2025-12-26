@@ -2,23 +2,20 @@ from pathlib import Path
 import shutil
 
 from thumbnail_ranking.quality_filter import (
-    QualityThresholds,
-    DEFAULT_THRESHOLDS,
     collect_image_metrics_from_folder,
     filter_by_quality_thresholds,
     remove_duplicate_images,
     calculate_statistics,
-    print_statistics,
+    calculate_adaptive_thresholds,
 )
 from thumbnail_ranking.clip_ranker import RankedImage, rank_images
-from utils import get_candidate_dir, get_top_candidates_dir, scan_videos
+from utils import get_candidate_dir, get_top_ranked_candidates_dir, scan_videos
 import config
 
 
 def rank_and_store_top_candidates(
     video_path: Path,
     top_n: int = 5,
-    quality_thresholds: QualityThresholds = DEFAULT_THRESHOLDS,
 ) -> list[RankedImage]:
     candidate_dir = get_candidate_dir(video_path)
 
@@ -30,15 +27,14 @@ def rank_and_store_top_candidates(
     if not all_metrics:
         raise ValueError(f"No candidate images found in {candidate_dir}")
 
-    quality_metrics = filter_by_quality_thresholds(all_metrics, quality_thresholds)
+    # Always calculate adaptive thresholds based on video statistics
+    print(f"  Calculating adaptive thresholds for {len(all_metrics)} candidates...")
+    statistics = calculate_statistics(all_metrics)
+    quality_thresholds = calculate_adaptive_thresholds(statistics)
 
+    quality_metrics = filter_by_quality_thresholds(all_metrics, quality_thresholds)
     if not quality_metrics:
-        print(f"\n  Statistics for {len(all_metrics)} candidates:")
-        statistics = calculate_statistics(all_metrics)
-        print_statistics(statistics)
-        raise ValueError(
-            f"No candidates passed quality filters ({len(all_metrics)} total, 0 passed)"
-        )
+        raise ValueError("No candidates passed quality filtering")
 
     deduplicated_metrics = remove_duplicate_images(
         quality_metrics, quality_thresholds.dup_distance
@@ -55,7 +51,7 @@ def rank_and_store_top_candidates(
     if not top_ranked:
         raise ValueError("No ranked images to store")
 
-    top_candidates_dir = get_top_candidates_dir(video_path)
+    top_candidates_dir = get_top_ranked_candidates_dir(video_path)
     top_candidates_dir.mkdir(parents=True, exist_ok=True)
 
     for existing in top_candidates_dir.glob("*.jpg"):
@@ -77,11 +73,8 @@ def rank_and_store_top_candidates(
 
 def select_best_thumbnail(
     video_path: Path,
-    quality_thresholds: QualityThresholds = DEFAULT_THRESHOLDS,
 ) -> Path | None:
-    top_ranked = rank_and_store_top_candidates(
-        video_path, top_n=1, quality_thresholds=quality_thresholds
-    )
+    top_ranked = rank_and_store_top_candidates(video_path, top_n=1)
 
     if not top_ranked:
         return None

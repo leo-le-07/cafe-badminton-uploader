@@ -5,6 +5,7 @@ from collections.abc import Iterator
 import json
 
 CANDIDATES_DIR = "candidates"
+TOP_RANKED_CANDIDATES_DIR = "top_candidates"
 METADATA_FILE = "metadata.json"
 SELECTED_CANDIDATE_NAME = "selected.jpg"
 RENDERED_THUMBNAIL_NAME = "thumbnail.jpg"
@@ -28,8 +29,8 @@ def get_candidate_dir(video_path: Path) -> Path:
     return get_workspace_dir(video_path) / CANDIDATES_DIR
 
 
-def get_top_candidates_dir(video_path: Path) -> Path:
-    return get_workspace_dir(video_path) / "top_candidates"
+def get_top_ranked_candidates_dir(video_path: Path) -> Path:
+    return get_workspace_dir(video_path) / TOP_RANKED_CANDIDATES_DIR
 
 
 def get_metadata_path(video_path: Path) -> Path:

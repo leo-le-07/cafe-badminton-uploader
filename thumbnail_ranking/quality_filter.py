@@ -40,9 +40,6 @@ class ImageMetrics:
         }
 
 
-DEFAULT_THRESHOLDS = QualityThresholds()
-
-
 def calculate_image_metrics(image_path: Path) -> ImageMetrics | None:
     image_array = cv2.imread(str(image_path))
     if image_array is None:
@@ -122,6 +119,41 @@ def calculate_statistics(
 def print_statistics(statistics: dict[str, np.ndarray]) -> None:
     for metric_name, percentiles in statistics.items():
         print(f"{metric_name} {percentiles}")
+
+
+def calculate_adaptive_thresholds(
+    statistics: dict[str, np.ndarray],
+) -> QualityThresholds:
+    PERCENTILE_5TH = 0
+    PERCENTILE_25TH = 1
+    PERCENTILE_95TH = 5
+
+    brightness_percentiles = statistics.get("brightness", np.array([0, 0, 0, 0, 0, 0]))
+    contrast_percentiles = statistics.get("contrast", np.array([0, 0, 0, 0, 0, 0]))
+    sharpness_percentiles = statistics.get("sharpness", np.array([0, 0, 0, 0, 0, 0]))
+    edge_density_percentiles = statistics.get(
+        "edge_density", np.array([0, 0, 0, 0, 0, 0])
+    )
+
+    min_brightness = float(
+        (
+            brightness_percentiles[PERCENTILE_5TH]
+            + brightness_percentiles[PERCENTILE_25TH]
+        )
+        / 2
+    )
+    max_brightness = float(brightness_percentiles[PERCENTILE_95TH])
+    min_contrast = float(contrast_percentiles[PERCENTILE_25TH])
+    min_sharpness = float(sharpness_percentiles[PERCENTILE_25TH])
+    min_edge_density = float(edge_density_percentiles[PERCENTILE_25TH])
+
+    return QualityThresholds(
+        min_brightness=min_brightness,
+        max_brightness=max_brightness,
+        min_contrast=min_contrast,
+        min_sharpness=min_sharpness,
+        min_edge_density=min_edge_density,
+    )
 
 
 def are_images_similar(
