@@ -1,3 +1,4 @@
+from schemas import MatchMetadata
 from googleapiclient.http import MediaFileUpload
 from auth_service import get_client
 import config
@@ -18,11 +19,15 @@ from utils import (
 CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
 
 
+def is_video_uploaded(video_path: Path) -> bool:
+    return get_upload_record_path(video_path).exists()
+
+
 def get_videos_ready_for_upload(video_paths: list[Path]) -> list[Path]:
     result = []
 
     for video_path in video_paths:
-        if get_upload_record_path(video_path).exists():
+        if is_video_uploaded(video_path):
             continue
 
         metadata_path = get_metadata_path(video_path)
@@ -42,8 +47,9 @@ def get_videos_ready_for_upload(video_paths: list[Path]) -> list[Path]:
     return result
 
 
-def upload(youtube_client: Any, video_path: Path, metadata: dict) -> str | None:
-    result = None
+def upload(
+    youtube_client: Any, video_path: Path, metadata: MatchMetadata
+) -> str | None:
     category = metadata.get("category", constants.CATEGORY_SPORTS)
     description = metadata.get("description", "")
     title = metadata.get("title", video_path.stem)
