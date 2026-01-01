@@ -1,3 +1,9 @@
+---
+name: ""
+overview: ""
+todos: []
+---
+
 # Temporal Workflow Migration Plan
 
 ## Overview
@@ -23,6 +29,8 @@ flowchart TD
     style WaitSignal fill:#ffeb3b
     style Human fill:#4caf50
 ```
+
+
 
 ## User Notification Flow
 
@@ -51,6 +59,8 @@ sequenceDiagram
     GUI->>W: Send ThumbnailSelectedSignal
     W->>W: Resume workflow
 ```
+
+
 
 ## Implementation Steps
 
@@ -142,10 +152,13 @@ sequenceDiagram
 - Query all workflows with status "WAITING_FOR_SELECTION"
 - Display list of videos ready for selection:
   ```javascript
-    Pending thumbnail selections:
-  1. workflow_id: abc123 | video: md_HuyzVietvsThezLeo.mov
-  2. workflow_id: def456 | video: ms_Player1vsPlayer2.mov
+      Pending thumbnail selections:
+    1. workflow_id: abc123 | video: md_HuyzVietvsThezLeo.mov
+    2. workflow_id: def456 | video: ms_Player1vsPlayer2.mov
   ```
+
+
+
 
 - Option to launch selection GUI: `uv run main_temporal.py select <workflow_id>`
 
@@ -243,6 +256,8 @@ cafe-badminton-uploader/
 └── pyproject.toml            # Modified: add temporalio dependency
 ```
 
+
+
 ## Key Benefits
 
 1. **Durability**: Workflows survive crashes and can resume
@@ -256,4 +271,3 @@ cafe-badminton-uploader/
 
 1. Keep existing `main.py` working (backward compatibility)
 2. Implement Temporal version alongside
-3. Test with single video first

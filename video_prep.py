@@ -7,6 +7,7 @@ import config
 import json
 import cv2
 import numpy as np
+import shutil
 import constants
 import utils
 from logger import get_logger
@@ -141,19 +142,38 @@ def store(video_path, metadata: MatchMetadata) -> None:
         json.dump(metadata, f, ensure_ascii=False, indent=4)
 
 
-def create_frame_candidates(
-    video_path: Path, output_dir: Path, num_candidates: int
-) -> None:
+def create_workspace(video_path: Path) -> None:
+    workspace_dir = utils.get_workspace_dir(video_path)
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+
+def create_and_store_metadata(video_path: Path) -> None:
+    create_workspace(video_path)
+    try:
+        metadata = create_metadata(video_path)
+        store(video_path, metadata)
+    except ValueError as e:
+        raise CreateMetadataError(e)
+
+
+def create_frame_candidates(video_path: Path) -> int:
+    candidate_dir = utils.get_candidate_dir(video_path)
+    num_candidates = config.CANDIDATE_THUMBNAIL_NUM
+
+    if candidate_dir.exists():
+        shutil.rmtree(candidate_dir)
+
     cap = cv2.VideoCapture(str(video_path.resolve()))
 
     if not cap.isOpened():
         raise IOError(f"Error opening video file: {video_path}")
 
     try:
+        total_stored = 0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         frame_indices = calculate_frame_indices(total_frames, num_candidates)
 
-        output_dir.mkdir(parents=True, exist_ok=True)
+        candidate_dir.mkdir(parents=True, exist_ok=True)
 
         for i, frame_idx in enumerate(frame_indices):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -163,27 +183,13 @@ def create_frame_candidates(
                 logger.warning(f"Could not read frame {frame_idx} from {video_path}")
                 continue
 
-            out_path = output_dir / f"frame_{frame_idx}.jpg"
+            out_path = candidate_dir / f"frame_{frame_idx}.jpg"
             cv2.imwrite(str(out_path), frame)
+            total_stored += 1
 
     finally:
         cap.release()
-
-
-def prepare_video(
-    video_path: Path,
-) -> None | CreateMetadataError:
-    workspace_dir = utils.get_workspace_dir(video_path)
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        metadata = create_metadata(video_path)
-        store(video_path, metadata)
-    except ValueError as e:
-        raise CreateMetadataError(e)
-
-    candidate_dir = utils.get_candidate_dir(video_path)
-    create_frame_candidates(video_path, candidate_dir, config.CANDIDATE_THUMBNAIL_NUM)
+    return total_stored
 
 
 def run():
@@ -191,7 +197,8 @@ def run():
 
     for video_path in videos:
         try:
-            prepare_video(video_path)
+            create_and_store_metadata(video_path)
+            create_frame_candidates(video_path)
         except CreateMetadataError as e:
             logger.error(f"Skipping {video_path.name}: {e}")
 

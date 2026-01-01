@@ -1,5 +1,9 @@
 from temporal.workflows import ProcessVideoWorkflow
-from temporal.activities import prepare_video_activity, rank_candidates_activity
+from temporal.activities import (
+    create_metadata_activity,
+    create_frame_candidates_activity,
+    rank_candidates_activity,
+)
 from temporal.client import get_client
 from constants import TEMPORAL_TASK_QUEUE
 from temporalio.worker import Worker
@@ -13,7 +17,8 @@ async def main():
         task_queue=TEMPORAL_TASK_QUEUE,
         workflows=[ProcessVideoWorkflow],
         activities=[
-            prepare_video_activity,
+            create_metadata_activity,
+            create_frame_candidates_activity,
             rank_candidates_activity,
         ],
     )
