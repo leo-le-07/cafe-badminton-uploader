@@ -1,9 +1,3 @@
----
-name: Temporal Workflow Migration
-overview: Migrate the badminton video uploader workflow to Temporal, converting each stage (prepare, rank, select, enhance, upload, cleanup) into Temporal Activities orchestrated by a Workflow. The human-in-the-loop selection step will use Temporal Signals to pause and resume the workflow while maintaining the existing OpenCV GUI.
-todos: []
----
-
 # Temporal Workflow Migration Plan
 
 ## Overview
@@ -30,8 +24,6 @@ flowchart TD
     style Human fill:#4caf50
 ```
 
-
-
 ## User Notification Flow
 
 ```mermaid
@@ -50,17 +42,15 @@ sequenceDiagram
     U->>UI: Check workflows (browser)
     UI-->>U: Show pending workflows
     Note over U: OR
-    U->>CLI: python main_temporal.py pending
+    U->>CLI: uv run main_temporal.py pending
     CLI-->>U: List of pending workflows
-    U->>CLI: python main_temporal.py select <id>
+    U->>CLI: uv run main_temporal.py select <id>
     CLI->>GUI: Launch selection GUI
     GUI->>U: Display candidates
     U->>GUI: Select thumbnail
     GUI->>W: Send ThumbnailSelectedSignal
     W->>W: Resume workflow
 ```
-
-
 
 ## Implementation Steps
 
@@ -153,26 +143,23 @@ sequenceDiagram
 - Display list of videos ready for selection:
   ```javascript
     Pending thumbnail selections:
-            1. workflow_id: abc123 | video: md_HuyzVietvsThezLeo.mov
-            2. workflow_id: def456 | video: ms_Player1vsPlayer2.mov
+  1. workflow_id: abc123 | video: md_HuyzVietvsThezLeo.mov
+  2. workflow_id: def456 | video: ms_Player1vsPlayer2.mov
   ```
 
-
-
-
-- Option to launch selection GUI: `python main_temporal.py select <workflow_id>`
+- Option to launch selection GUI: `uv run main_temporal.py select <workflow_id>`
 
 **Selection Process:**
 
-1. User checks Temporal Web UI or runs `python main_temporal.py pending`
+1. User checks Temporal Web UI or runs `uv run main_temporal.py pending`
 2. User identifies workflow waiting for selection
-3. User runs: `python main_temporal.py select <workflow_id>` OR manually runs selection GUI
+3. User runs: `uv run main_temporal.py select <workflow_id>` OR manually runs selection GUI
 4. Modified `thumbnail_selector.py`:
 
-                - Accepts workflow_id as parameter
-                - Opens existing OpenCV GUI for selection
-                - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal(ThumbnailSelectedSignal, video_path, selected_frame)`
-                - Workflow resumes automatically
+                                - Accepts workflow_id as parameter
+                                - Opens existing OpenCV GUI for selection
+                                - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal(ThumbnailSelectedSignal, video_path, selected_frame)`
+                                - Workflow resumes automatically
 
 ### 5. Refactor Existing Code
 
@@ -208,20 +195,12 @@ sequenceDiagram
 - Scan videos in `INPUT_DIR`
 - Start a workflow for each video
 - Provide CLI to:
-- Start workflows: `python main_temporal.py start`
-- Check status: `python main_temporal.py status <workflow_id>`
-- **List pending selections**: `python main_temporal.py pending` (shows workflows waiting for human input)
-- Trigger selection GUI: `python main_temporal.py select <workflow_id>`
+- Start workflows: `uv run main_temporal.py start`
+- Check status: `uv run main_temporal.py status <workflow_id>`
+- **List pending selections**: `uv run main_temporal.py pending` (shows workflows waiting for human input)
+- Trigger selection GUI: `uv run main_temporal.py select <workflow_id>`
 
 ### 7. Temporal Dev Server Setup
-
-**Option A: Docker Compose** (`docker-compose.yml`):
-
-- Include Temporal Dev Server service
-- Include Temporal Web UI
-- Easy local development
-
-**Option B: Manual Installation:**
 
 - Install Temporal CLI
 - Run `temporal server start-dev` locally
@@ -264,8 +243,6 @@ cafe-badminton-uploader/
 └── pyproject.toml            # Modified: add temporalio dependency
 ```
 
-
-
 ## Key Benefits
 
 1. **Durability**: Workflows survive crashes and can resume
@@ -280,7 +257,3 @@ cafe-badminton-uploader/
 1. Keep existing `main.py` working (backward compatibility)
 2. Implement Temporal version alongside
 3. Test with single video first
-4. Gradually migrate to full Temporal workflow
-5. Eventually deprecate old CLI-based approach
-
-## Next Steps After Implementation

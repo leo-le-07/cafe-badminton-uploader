@@ -6,6 +6,9 @@ import cv2
 import imagehash
 import numpy as np
 from PIL import Image
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -26,7 +29,7 @@ class ImageMetrics:
     contrast: float
     sharpness: float
     edge_density: float
-    phash: imagehash.ImageHash
+    phash: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +41,9 @@ class ImageMetrics:
             "edge_density": self.edge_density,
             "phash": self.phash,
         }
+
+    def get_phash(self) -> imagehash.ImageHash:
+        return imagehash.hex_to_hash(self.phash)
 
 
 def calculate_image_metrics(image_path: Path) -> ImageMetrics | None:
@@ -57,6 +63,7 @@ def calculate_image_metrics(image_path: Path) -> ImageMetrics | None:
     edge_density = float(edge_pixels / total_pixels)
 
     perceptual_hash = imagehash.phash(Image.open(image_path))
+    phash_str = str(perceptual_hash)
 
     return ImageMetrics(
         path=str(image_path),
@@ -65,7 +72,7 @@ def calculate_image_metrics(image_path: Path) -> ImageMetrics | None:
         contrast=contrast,
         sharpness=sharpness,
         edge_density=edge_density,
-        phash=perceptual_hash,
+        phash=phash_str,
     )
 
 
@@ -117,8 +124,9 @@ def calculate_statistics(
 
 
 def print_statistics(statistics: dict[str, np.ndarray]) -> None:
+    """Print statistics to logger (kept function name for backward compatibility)."""
     for metric_name, percentiles in statistics.items():
-        print(f"{metric_name} {percentiles}")
+        logger.info(f"{metric_name} {percentiles}")
 
 
 def calculate_adaptive_thresholds(
@@ -159,7 +167,9 @@ def calculate_adaptive_thresholds(
 def are_images_similar(
     metrics1: ImageMetrics, metrics2: ImageMetrics, max_distance: int
 ) -> bool:
-    hash_distance = metrics1.phash - metrics2.phash
+    hash1 = metrics1.get_phash()
+    hash2 = metrics2.get_phash()
+    hash_distance = hash1 - hash2
     return hash_distance <= max_distance
 
 

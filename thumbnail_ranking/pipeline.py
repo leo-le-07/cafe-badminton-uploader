@@ -10,13 +10,18 @@ from thumbnail_ranking.quality_filter import (
 )
 from thumbnail_ranking.clip_ranker import RankedImage, rank_images
 from utils import get_candidate_dir, get_top_ranked_candidates_dir, scan_videos
+from logger import get_logger
 import config
 
+logger = get_logger(__name__)
 
-def rank_and_store_top_candidates(
+
+def rank_candidates(
     video_path: Path,
-    top_n: int = 5,
+    top_n: int | None = None,
 ) -> list[RankedImage]:
+    if top_n is None:
+        top_n = config.TOP_RANKED_CANDIDATES_NUM
     candidate_dir = get_candidate_dir(video_path)
 
     if not candidate_dir.exists():
@@ -28,7 +33,7 @@ def rank_and_store_top_candidates(
         raise ValueError(f"No candidate images found in {candidate_dir}")
 
     # Always calculate adaptive thresholds based on video statistics
-    print(f"  Calculating adaptive thresholds for {len(all_metrics)} candidates...")
+    logger.info(f"Calculating adaptive thresholds for {len(all_metrics)} candidates")
     statistics = calculate_statistics(all_metrics)
     quality_thresholds = calculate_adaptive_thresholds(statistics)
 
@@ -71,44 +76,14 @@ def rank_and_store_top_candidates(
     return top_ranked
 
 
-def select_best_thumbnail(
-    video_path: Path,
-) -> Path | None:
-    top_ranked = rank_and_store_top_candidates(video_path, top_n=1)
-
-    if not top_ranked:
-        return None
-
-    return top_ranked[0].metrics.path
-
-
 def run():
     videos = scan_videos(config.INPUT_DIR)
 
     for video_path in videos:
-        print(f"Ranking candidates for {video_path.name}...")
+        logger.info(f"Ranking candidates for {video_path.name}")
         try:
-            ranked = rank_and_store_top_candidates(
-                video_path, top_n=config.TOP_RANKED_CANDIDATES_NUM
-            )
-            print(f"  ✓ Ranked and stored top {len(ranked)} candidates")
+            ranked = rank_candidates(video_path)
+            logger.info(f"Ranked and stored top {len(ranked)} candidates")
         except Exception as e:
-            print(f"  ✗ Error: {e}")
+            logger.error(f"Error ranking candidates for {video_path.name}: {e}")
 
-
-def run_test():
-    videos = list(scan_videos(config.INPUT_DIR))
-    if not videos:
-        print("No videos found in input directory")
-        return
-
-    test_video = videos[0]
-    top_ranked = rank_and_store_top_candidates(test_video, top_n=3)
-
-    print(f"Top {len(top_ranked)} thumbnails ranked:")
-    for ranked in top_ranked:
-        print(f"  {ranked.metrics.filename} (score: {ranked.clip_score:.4f})")
-
-
-if __name__ == "__main__":
-    run_test()

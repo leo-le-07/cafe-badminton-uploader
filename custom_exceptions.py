@@ -1,0 +1,2 @@
+class CreateMetadataError(Exception):
+    pass

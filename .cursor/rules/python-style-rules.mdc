@@ -1,0 +1,42 @@
+---
+description: Python style: functional, pure functions, minimal comments
+globs:
+  - "**/*.py"
+alwaysApply: true
+---
+## Goal
+Write clean, testable Python using a functional style where practical.
+
+## Style Rules
+- Prefer **functional programming** style:
+  - small functions
+  - explicit inputs/outputs
+  - composition over deep class hierarchies
+- Prefer **pure functions**:
+  - avoid hidden state
+  - avoid mutating arguments
+  - avoid global variables
+- Side effects (I/O, DB, network, filesystem) must be:
+  - isolated in thin boundary functions/modules
+  - clearly separated from pure logic
+
+## Python Preferences
+- Use type hints for public functions.
+- Prefer `dataclass(frozen=True)` for immutable data structures.
+- Avoid over-engineering: keep it simple and readable.
+
+## Comments
+- **Do not comment obvious code.**
+- Add comments only when:
+  - explaining a non-obvious decision/tradeoff
+  - warning about a known pitfall
+  - documenting a tricky edge case
+- Prefer clear names over comments.
+
+## Testing
+- Make core logic easy to unit test (pure functions).
+- Avoid tight coupling to environment/config; pass dependencies explicitly.
+
+## If unsure
+- Default to clarity and small pure functions.
+

@@ -1,3 +1,4 @@
+from custom_exceptions import CreateMetadataError
 from schemas import MatchMetadata
 from pathlib import Path
 from datetime import datetime
@@ -8,6 +9,9 @@ import cv2
 import numpy as np
 import constants
 import utils
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 MATCH_TYPES = {
     "ms": "Men's Singles",
@@ -156,7 +160,7 @@ def create_frame_candidates(
             ret, frame = cap.read()
 
             if not ret:
-                print(f"Warning: Could not read frame {frame_idx} from {video_path}")
+                logger.warning(f"Could not read frame {frame_idx} from {video_path}")
                 continue
 
             out_path = output_dir / f"frame_{frame_idx}.jpg"
@@ -166,24 +170,30 @@ def create_frame_candidates(
         cap.release()
 
 
+def prepare_video(
+    video_path: Path,
+) -> None | CreateMetadataError:
+    workspace_dir = utils.get_workspace_dir(video_path)
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        metadata = create_metadata(video_path)
+        store(video_path, metadata)
+    except ValueError as e:
+        raise CreateMetadataError(e)
+
+    candidate_dir = utils.get_candidate_dir(video_path)
+    create_frame_candidates(video_path, candidate_dir, config.CANDIDATE_THUMBNAIL_NUM)
+
+
 def run():
     videos = utils.scan_videos(config.INPUT_DIR)
 
     for video_path in videos:
-        workspace_dir = utils.get_workspace_dir(video_path)
-        workspace_dir.mkdir(parents=True, exist_ok=True)
-
         try:
-            metadata = create_metadata(video_path)
-            store(video_path, metadata)
-        except ValueError as e:
-            print(f"Skipping {video_path.name}: {e}")
-            continue
-
-        candidate_dir = utils.get_candidate_dir(video_path)
-        create_frame_candidates(
-            video_path, candidate_dir, config.CANDIDATE_THUMBNAIL_NUM
-        )
+            prepare_video(video_path)
+        except CreateMetadataError as e:
+            logger.error(f"Skipping {video_path.name}: {e}")
 
 
 if __name__ == "__main__":
