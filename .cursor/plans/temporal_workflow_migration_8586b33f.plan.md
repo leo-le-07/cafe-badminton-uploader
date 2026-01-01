@@ -4,9 +4,7 @@ overview: Migrate the badminton video uploader workflow to Temporal, converting 
 todos: []
 ---
 
-# Temporal Workflow Migration
-
-Plan
+# Temporal Workflow Migration Plan
 
 ## Overview
 
@@ -144,9 +142,9 @@ sequenceDiagram
 - Access Temporal Web UI (default: `http://localhost:8088` for dev server)
 - View running workflows in the "Workflows" tab
 - Workflows waiting for selection will show:
-                                                                                                                                - Status: "Running" (workflow is active but paused)
-                                                                                                                                - Current step visible in workflow history
-                                                                                                                                - Filter/search by workflow type to find pending selections
+                                - Status: "Running" (workflow is active but paused)
+                                - Current step visible in workflow history
+                                - Filter/search by workflow type to find pending selections
 - Click on workflow to see detailed execution history showing it's waiting at the selection step
 
 **Secondary Method: CLI Command** (`main_temporal.py pending`):
@@ -171,10 +169,10 @@ sequenceDiagram
 3. User runs: `python main_temporal.py select <workflow_id>` OR manually runs selection GUI
 4. Modified `thumbnail_selector.py`:
 
-                                                                                                                                                                                                - Accepts workflow_id as parameter
-                                                                                                                                                                                                - Opens existing OpenCV GUI for selection
-                                                                                                                                                                                                - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal(ThumbnailSelectedSignal, video_path, selected_frame)`
-                                                                                                                                                                                                - Workflow resumes automatically
+                - Accepts workflow_id as parameter
+                - Opens existing OpenCV GUI for selection
+                - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal(ThumbnailSelectedSignal, video_path, selected_frame)`
+                - Workflow resumes automatically
 
 ### 5. Refactor Existing Code
 
@@ -286,6 +284,3 @@ cafe-badminton-uploader/
 5. Eventually deprecate old CLI-based approach
 
 ## Next Steps After Implementation
-
-1. Add workflow versioning for future changes
-2. Implement workflow cancellation
