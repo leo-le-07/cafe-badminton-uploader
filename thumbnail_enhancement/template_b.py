@@ -7,6 +7,9 @@ from thumbnail_enhancement.common import (
     get_theme_for_tournament,
 )
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # --- Configuration ---
 SIDEBAR_RATIO = 0.3  # 30% Width
@@ -311,7 +314,7 @@ def render_thumbnail(video_path: Path) -> None:
     metadata = get_metadata(video_path)
 
     if not selected_path.exists() or not metadata:
-        print(f"Skipping {video_path.name}: Missing data")
+        logger.warning(f"Skipping {video_path.name}: Missing data")
         return
 
     CANVAS_W, CANVAS_H = 1920, 1080
@@ -346,4 +349,4 @@ def render_thumbnail(video_path: Path) -> None:
     )
 
     final_img.save(output_path, quality=95)
-    print(f"{output_path}")
+    logger.info(f"Rendered thumbnail: {output_path}")

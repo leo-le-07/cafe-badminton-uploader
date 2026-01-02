@@ -14,6 +14,9 @@ from thumbnail_enhancement.common import (
     get_theme_for_tournament,
 )
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 BAR_STYLES = {
     STYLE_BLUE: {
@@ -129,7 +132,7 @@ def draw_matchup_text(img_pil: Image.Image, text: str, style_name: str) -> Image
     try:
         font = ImageFont.truetype(str(FONT_PATH), font_size)
     except OSError:
-        print(f"Warning: Could not load font at {FONT_PATH}. Using default.")
+        logger.warning(f"Could not load font at {FONT_PATH}. Using default.")
         font = ImageFont.load_default()
 
     bbox = draw.textbbox((0, 0), text, font=font)
@@ -236,7 +239,7 @@ def render_thumbnail(video_path: Path):
     metadata = get_metadata(video_path)
 
     if not selected_path.exists() or not metadata:
-        print(f"Missing selected thumbnail or metadata in {video_path.name}")
+        logger.warning(f"Missing selected thumbnail or metadata in {video_path.name}")
         return
 
     team_1_names = metadata.team1_names
@@ -253,5 +256,4 @@ def render_thumbnail(video_path: Path):
     img = draw_tournament_badge(img, tournament, decor_style)
 
     img.save(output_path, quality=95)
-
-    print(f"{output_path}")
+    logger.info(f"Rendered thumbnail: {output_path}")

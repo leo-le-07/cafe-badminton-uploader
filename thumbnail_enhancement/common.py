@@ -2,6 +2,9 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageEnhance
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 LOGO_PATH = Path("assets/logo.png")
 
@@ -74,7 +77,7 @@ def enhance_image_visuals(img_pil: Image.Image) -> Image.Image:
 
 def add_logo(img_pil: Image.Image, logo_path: Path) -> Image.Image:
     if not logo_path.exists():
-        print(f"Logo file not found: {logo_path}")
+        logger.warning(f"Logo file not found: {logo_path}")
         return img_pil
 
     img_pil = img_pil.convert("RGBA")
