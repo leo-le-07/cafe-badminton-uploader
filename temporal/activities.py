@@ -1,3 +1,4 @@
+from thumbnail_enhancement import render_thumbnail
 from schemas import MatchMetadata
 from thumbnail_ranking import rank_candidates, RankedImage
 from temporalio import activity
@@ -24,3 +25,9 @@ def rank_candidates_activity(video_path: str) -> list[RankedImage]:
     top_ranked = rank_candidates(path)
 
     return top_ranked
+
+
+@activity.defn
+def render_thumbnail_activity(video_path: str) -> None:
+    path = Path(video_path)
+    render_thumbnail(path)

@@ -111,7 +111,7 @@ sequenceDiagram
 1. Executes `prepare_video_activity`
 2. Executes `rank_thumbnails_activity`
 3. **Waits for human selection signal** (using `workflow.wait_condition`)
-4. Executes `select_thumbnail_activity` (after signal received)
+4. CLI select thumbnail for each workflow. Send signal back to workflow after thumbnail selected
 5. Executes `enhance_thumbnail_activity`
 6. Executes `upload_video_activity`
 7. Executes `cleanup_video_activity`
@@ -169,21 +169,10 @@ sequenceDiagram
 
   - Accepts workflow_id as parameter
   - Opens existing OpenCV GUI for selection
-  - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal(ThumbnailSelectedSignal, video_path, selected_frame)`
+  - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal('select')`
   - Workflow resumes automatically
 
-### 5. Refactor Existing Code
-
-**Modify batch-processing functions to support per-video execution:**
-
-- `video_prep.py`: Extract `prepare_single_video(video_path: Path)` from `run()`
-- `thumbnail_ranking/pipeline.py`: Already has per-video function (`rank_and_store_top_candidates`)
-- `thumbnail_selector.py`: Already per-video (`select_thumbnail`), add signal sending
-- `thumbnail_enhancement/renderer.py`: Extract per-video logic if needed
-- `uploader.py`: Extract `upload_single_video(video_path: Path)` from `run()`
-- `cleanup.py`: Extract `cleanup_single_video(video_path: Path)` from `cleanup_uploaded_videos()`
-
-### 6. Worker and Client Setup
+### 5. Worker and Client Setup
 
 **Worker** (`temporal/worker.py`):
 
@@ -211,12 +200,12 @@ sequenceDiagram
 - **List pending selections**: `uv run main_temporal.py pending` (shows workflows waiting for human input)
 - Trigger selection GUI: `uv run main_temporal.py select <workflow_id>`
 
-### 7. Temporal Dev Server Setup
+### 6. Temporal Dev Server Setup
 
 - Install Temporal CLI
 - Run `temporal server start-dev` locally
 
-### 8. Testing Strategy
+### 7. Testing Strategy
 
 **Unit Tests:**
 
@@ -265,4 +254,3 @@ cafe-badminton-uploader/
 5. **Scalability**: Can process multiple videos concurrently
 6. **Failure Recovery**: Resume from last successful step
 
-## Migration Path

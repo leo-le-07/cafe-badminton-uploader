@@ -305,7 +305,7 @@ def prepare_image_side(selected_path: Path, image_w: int, canvas_h: int) -> Imag
     )
 
 
-def render_thumbnail(video_path: Path):
+def render_thumbnail(video_path: Path) -> None:
     selected_path = get_selected_candidate_path(video_path)
     output_path = get_thumbnail_path(video_path)
     metadata = get_metadata(video_path)

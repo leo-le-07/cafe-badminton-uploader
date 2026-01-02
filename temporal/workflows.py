@@ -8,6 +8,7 @@ from constants import (
     WORKFLOW_STAGE_RANKING_CANDIDATES,
     WORKFLOW_STAGE_WAITING_FOR_SELECTION,
     WORKFLOW_STAGE_SELECTED,
+    WORKFLOW_STAGE_ENHANCING_THUMBNAIL,
 )
 
 with workflow.unsafe.imports_passed_through():
@@ -15,6 +16,7 @@ with workflow.unsafe.imports_passed_through():
         create_metadata_activity,
         create_frame_candidates_activity,
         rank_candidates_activity,
+        render_thumbnail_activity,
     )
 
 
@@ -26,7 +28,7 @@ class ProcessVideoWorkflow:
         self.video_path: str = ""
 
     @workflow.signal
-    def select(self) -> None:
+    def thumbnail_selected(self) -> None:
         self.selected = True
         self.stage = WORKFLOW_STAGE_SELECTED
 
@@ -41,7 +43,7 @@ class ProcessVideoWorkflow:
     @workflow.run
     async def run(self, video_path: str) -> None:
         self.video_path = video_path
-        
+
         self.stage = WORKFLOW_STAGE_CREATING_METADATA
         await workflow.execute_activity(
             create_metadata_activity,
@@ -60,10 +62,16 @@ class ProcessVideoWorkflow:
         await workflow.execute_activity(
             rank_candidates_activity,
             video_path,
-            start_to_close_timeout=timedelta(minutes=2),
+            start_to_close_timeout=timedelta(minutes=5),
         )
 
         self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
         await workflow.wait_condition(lambda: self.selected)
 
+        self.stage = WORKFLOW_STAGE_ENHANCING_THUMBNAIL
+        await workflow.execute_activity(
+            render_thumbnail_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=2),
+        )
         workflow.logger.info(f"Video processing completed for {video_path}")

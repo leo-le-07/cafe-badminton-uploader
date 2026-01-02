@@ -4,6 +4,7 @@ from temporal.activities import (
     create_metadata_activity,
     create_frame_candidates_activity,
     rank_candidates_activity,
+    render_thumbnail_activity,
 )
 from temporal.client import get_client
 from constants import TEMPORAL_TASK_QUEUE
@@ -22,6 +23,7 @@ async def main():
                 create_metadata_activity,
                 create_frame_candidates_activity,
                 rank_candidates_activity,
+                render_thumbnail_activity,
             ],
             activity_executor=executor,
         )

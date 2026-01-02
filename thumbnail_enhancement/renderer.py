@@ -21,9 +21,9 @@ def get_template_module(template_name: str):
     return TEMPLATES[template_name]
 
 
-def render_thumbnail(video_path: Path, template_name: str = DEFAULT_TEMPLATE):
+def render_thumbnail(video_path: Path, template_name: str = DEFAULT_TEMPLATE) -> None:
     template_module = get_template_module(template_name)
-    return template_module.render_thumbnail(video_path)
+    template_module.render_thumbnail(video_path)
 
 
 def run(template_name: str = DEFAULT_TEMPLATE):

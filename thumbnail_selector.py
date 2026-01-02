@@ -101,7 +101,7 @@ async def select_thumbnail_with_workflow(workflow_handle) -> None:
         shutil.copyfile(selected_image, selected_path)
         
         try:
-            await workflow_handle.signal("select")
+            await workflow_handle.signal("thumbnail_selected")
             logger.info(f"Selected thumbnail saved and signal sent for {video_path.name}")
         except Exception as e:
             logger.error(f"Error sending signal to workflow: {e}")
