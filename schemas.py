@@ -19,3 +19,10 @@ class UploadedRecord:
     uploaded_at: str
     thumbnail_set: bool
     youtube_link: str
+
+
+@dataclass(frozen=True)
+class ChannelInfo:
+    channel_id: str
+    title: str
+    description: str

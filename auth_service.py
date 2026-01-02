@@ -1,10 +1,12 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from logger import get_logger
+from schemas import ChannelInfo
 
 TOKEN_FILE = "token.json"
 CLIENT_SECRET_FILE = "client_secret.json"
@@ -13,6 +15,20 @@ API_SERVICE_NAME = "youtube"
 API_VERSION = "v3"
 
 logger = get_logger(__name__)
+
+
+def parse_channel_response(response: dict[str, Any]) -> ChannelInfo:
+    if "items" not in response or not response["items"]:
+        raise ValueError("Channel response missing items or items list is empty")
+    
+    item = response["items"][0]
+    snippet = item.get("snippet", {})
+    
+    return ChannelInfo(
+        channel_id=item["id"],
+        title=snippet["title"],
+        description=snippet.get("description", ""),
+    )
 
 
 def authenticate() -> None:
@@ -29,8 +45,8 @@ def authenticate() -> None:
     request = youtube.channels().list(mine=True, part="snippet")
     response = request.execute()
 
-    channel_name = response["items"][0]["snippet"]["title"]
-    logger.info(f"Successfully authenticated for channel: {channel_name}")
+    channel_info = parse_channel_response(response)
+    logger.info(f"Successfully authenticated for channel: {channel_info.title}")
 
     with open(TOKEN_FILE, "w") as f:
         f.write(credentials.to_json())
