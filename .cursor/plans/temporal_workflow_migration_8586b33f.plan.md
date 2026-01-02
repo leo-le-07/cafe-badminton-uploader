@@ -52,13 +52,15 @@ sequenceDiagram
     Note over U: OR
     U->>CLI: uv run main_temporal.py pending
     CLI-->>U: List of pending workflows
-    U->>CLI: uv run main_temporal.py select <id>
+    U->>CLI: uv run main_temporal.py select
     CLI->>GUI: Launch selection GUI
     GUI->>U: Display candidates
     U->>GUI: Select thumbnail
     GUI->>W: Send ThumbnailSelectedSignal
     W->>W: Resume workflow
 ```
+
+
 
 ## Implementation Steps
 
@@ -132,7 +134,6 @@ sequenceDiagram
 
 - Workflow waits for signal using `workflow.wait_condition(lambda: signal_received)`
 - Signal handler sets flag to resume workflow
-- Timeout handling (optional): cancel workflow if no signal received within X hours
 - **Workflow Query**: Add `get_status_query()` to expose workflow state (e.g., "WAITING_FOR_SELECTION", "RANKING", "UPLOADING")
 
 **User Notification - How to Know When Rank is Done:Primary Method: Temporal Web UI**
@@ -140,9 +141,9 @@ sequenceDiagram
 - Access Temporal Web UI (default: `http://localhost:8088` for dev server)
 - View running workflows in the "Workflows" tab
 - Workflows waiting for selection will show:
-  - Status: "Running" (workflow is active but paused)
-  - Current step visible in workflow history
-  - Filter/search by workflow type to find pending selections
+- Status: "Running" (workflow is active but paused)
+- Current step visible in workflow history
+- Filter/search by workflow type to find pending selections
 - Click on workflow to see detailed execution history showing it's waiting at the selection step
 
 **Secondary Method: CLI Command** (`main_temporal.py pending`):
@@ -150,18 +151,22 @@ sequenceDiagram
 - Query all workflows with status "WAITING_FOR_SELECTION"
 - Display list of videos ready for selection:
   ```javascript
-  Pending thumbnail selections:
-  1. workflow_id: abc123 | video: md_HuyzVietvsThezLeo.mov
-  2. workflow_id: def456 | video: ms_Player1vsPlayer2.mov
+      Pending thumbnail selections:
+    1. workflow_id: abc123 | video: md_HuyzVietvsThezLeo.mov
+    2. workflow_id: def456 | video: ms_Player1vsPlayer2.mov
   ```
-- Option to launch selection GUI: `uv run main_temporal.py select <workflow_id>`
+
+
+
+
+- Option to launch selection GUI: `uv run main_temporal.py select`
 
 **Selection Process:**
 
-1. User checks Temporal Web UI or runs `uv run main_temporal.py pending`
-2. User identifies workflow waiting for selection
-3. User runs: `uv run main_temporal.py select <workflow_id>` OR manually runs selection GUI
-4. Modified `thumbnail_selector.py`:
+1. Run `uv main_temporal.py pending` to list workflows waiting for selection
+2. Run `uv main_temporal.py select` to launch selection GUI for all waiting for selection workflows
+3. Modified `thumbnail_selector.py`:
+
   - Accepts workflow_id as parameter
   - Opens existing OpenCV GUI for selection
   - After user selects thumbnail, sends signal to workflow: `workflow_handle.signal(ThumbnailSelectedSignal, video_path, selected_frame)`
@@ -201,10 +206,10 @@ sequenceDiagram
 - Scan videos in `INPUT_DIR`
 - Start a workflow for each video
 - Provide CLI to:
-  - Start workflows: `uv run main_temporal.py start`
-  - Check status: `uv run main_temporal.py status <workflow_id>`
-  - **List pending selections**: `uv run main_temporal.py pending` (shows workflows waiting for human input)
-  - Trigger selection GUI: `uv run main_temporal.py select <workflow_id>`
+- Start workflows: `uv run main_temporal.py start`
+- Check status: `uv run main_temporal.py status <workflow_id>`
+- **List pending selections**: `uv run main_temporal.py pending` (shows workflows waiting for human input)
+- Trigger selection GUI: `uv run main_temporal.py select <workflow_id>`
 
 ### 7. Temporal Dev Server Setup
 
@@ -249,6 +254,8 @@ cafe-badminton-uploader/
 └── pyproject.toml            # Modified: add temporalio dependency
 ```
 
+
+
 ## Key Benefits
 
 1. **Durability**: Workflows survive crashes and can resume
@@ -259,6 +266,3 @@ cafe-badminton-uploader/
 6. **Failure Recovery**: Resume from last successful step
 
 ## Migration Path
-
-1. Keep existing `main.py` working (backward compatibility)
-2. Implement Temporal version alongside

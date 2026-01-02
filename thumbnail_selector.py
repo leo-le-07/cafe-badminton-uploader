@@ -2,23 +2,28 @@ import config
 from pathlib import Path
 import cv2
 import shutil
+import asyncio
+from typing import Optional
 
 from utils import (
     get_selected_candidate_path,
     scan_videos,
     get_top_ranked_candidates_dir,
 )
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
-def select_thumbnail(video_path: Path):
+def _select_thumbnail_gui(video_path: Path) -> Optional[Path]:
     video_stem = video_path.stem
     top_candidates_dir = get_top_ranked_candidates_dir(video_path)
 
     images = list(top_candidates_dir.glob("*.jpg"))
 
     if not images:
-        print(f"No top candidates found for {video_path.name}")
-        return
+        logger.warning(f"No top candidates found for {video_path.name}")
+        return None
 
     images.sort(key=lambda p: int(p.stem.split("_")[1]))
 
@@ -30,16 +35,14 @@ def select_thumbnail(video_path: Path):
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1280, 720)
 
-    print(f"\n--- Selecting thumbnail for: {video_stem} ---")
-    print(f"Showing top {total_images} ranked candidates")
-    print("Controls: [H/L]=Nav  [Enter]=Select  [S]=Default(First)")
+    logger.info(f"Selecting thumbnail for: {video_stem} ({total_images} candidates)")
 
     while True:
         img_path = images[current_idx]
         img = cv2.imread(str(img_path))
 
         if img is None:
-            print(f"Error loading image: {img_path}")
+            logger.error(f"Error loading image: {img_path}")
             break
 
         display_img = img.copy()
@@ -70,15 +73,41 @@ def select_thumbnail(video_path: Path):
 
         elif key in [ord("s"), 13]:  # Enter or 's' -> SELECT
             selected_image = img_path
-            print(f"Selected: {img_path.name}")
+            logger.info(f"Selected: {img_path.name}")
             break
 
     cv2.destroyWindow(window_name)
     cv2.waitKey(1)  # Give OpenCV 1ms to process the window destruction
 
+    return selected_image
+
+
+def select_thumbnail(video_path: Path):
+    selected_image = _select_thumbnail_gui(video_path)
+    
     if selected_image:
         selected_path = get_selected_candidate_path(video_path)
         shutil.copyfile(selected_image, selected_path)
+
+
+async def select_thumbnail_with_workflow(workflow_handle) -> None:
+    video_path_str = await workflow_handle.query("get_video_path")
+    video_path = Path(video_path_str)
+    
+    selected_image = _select_thumbnail_gui(video_path)
+    
+    if selected_image:
+        selected_path = get_selected_candidate_path(video_path)
+        shutil.copyfile(selected_image, selected_path)
+        
+        try:
+            await workflow_handle.signal("select")
+            logger.info(f"Selected thumbnail saved and signal sent for {video_path.name}")
+        except Exception as e:
+            logger.error(f"Error sending signal to workflow: {e}")
+            raise
+    else:
+        logger.warning("No thumbnail selected. Workflow will remain waiting.")
 
 
 def run():
