@@ -48,9 +48,9 @@ def get_thumbnail_path(video_path: Path) -> Path:
 def get_metadata(video_path: Path) -> MatchMetadata:
     metadata_path = get_metadata_path(video_path)
     with open(metadata_path, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
+        metadata_dict = json.load(f)
 
-    return metadata
+    return MatchMetadata(**metadata_dict)
 
 
 def get_upload_record_path(video_path: Path) -> Path:

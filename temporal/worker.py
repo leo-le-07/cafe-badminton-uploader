@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from temporal.workflows import ProcessVideoWorkflow
 from temporal.activities import (
     create_metadata_activity,
@@ -12,19 +13,21 @@ import asyncio
 
 async def main():
     client = await get_client()
-    worker = Worker(
-        client,
-        task_queue=TEMPORAL_TASK_QUEUE,
-        workflows=[ProcessVideoWorkflow],
-        activities=[
-            create_metadata_activity,
-            create_frame_candidates_activity,
-            rank_candidates_activity,
-        ],
-    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        worker = Worker(
+            client,
+            task_queue=TEMPORAL_TASK_QUEUE,
+            workflows=[ProcessVideoWorkflow],
+            activities=[
+                create_metadata_activity,
+                create_frame_candidates_activity,
+                rank_candidates_activity,
+            ],
+            activity_executor=executor,
+        )
 
-    print(f"Worker started for task queue: {TEMPORAL_TASK_QUEUE}")
-    await worker.run()
+        print(f"Worker started for task queue: {TEMPORAL_TASK_QUEUE}")
+        await worker.run()
 
 
 if __name__ == "__main__":

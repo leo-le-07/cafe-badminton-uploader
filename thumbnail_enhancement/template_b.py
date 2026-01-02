@@ -324,7 +324,7 @@ def render_thumbnail(video_path: Path):
     right_img = prepare_image_side(selected_path, image_w, CANVAS_H)
     final_img.paste(right_img, (sidebar_w, 0))
 
-    tournament = metadata.get("tournament", "").strip()
+    tournament = metadata.tournament.strip()
     style_key = get_theme_for_tournament(tournament)
 
     # 2. Prepare and Paste Sidebar Background & Text
@@ -336,8 +336,8 @@ def render_thumbnail(video_path: Path):
     final_img.paste(sidebar, (0, 0))
 
     # 3. Draw Matchup Block ON TOP of everything
-    team1_names = metadata.get("team1Names", ["Team 1"])
-    team2_names = metadata.get("team2Names", ["Team 2"])
+    team1_names = metadata.team1_names
+    team2_names = metadata.team2_names
     team1_text = format_team_name(team1_names)
     team2_text = format_team_name(team2_names)
 

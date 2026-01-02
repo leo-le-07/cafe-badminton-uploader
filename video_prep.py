@@ -2,6 +2,7 @@ from custom_exceptions import CreateMetadataError
 from schemas import MatchMetadata
 from pathlib import Path
 from datetime import datetime
+from dataclasses import asdict
 
 import config
 import json
@@ -121,16 +122,16 @@ def create_metadata(video_path: Path) -> MatchMetadata:
     title = create_title(tournament, team1, team2, current_date)
     description = create_description(tournament, match_type, team1, team2, current_date)
 
-    metadata: MatchMetadata = {
-        "matchType": match_type,
-        "team1Names": team1,
-        "team2Names": team2,
-        "tournament": tournament,
-        "title": title,
-        "description": description,
-        "category": constants.CATEGORY_SPORTS,
-        "privacyStatus": config.VIDEO_PRIVACY_STATUS,
-    }
+    metadata = MatchMetadata(
+        match_type=match_type,
+        team1_names=team1,
+        team2_names=team2,
+        tournament=tournament,
+        title=title,
+        description=description,
+        category=constants.CATEGORY_SPORTS,
+        privacy_status=config.VIDEO_PRIVACY_STATUS,
+    )
 
     return metadata
 
@@ -139,7 +140,7 @@ def store(video_path, metadata: MatchMetadata) -> None:
     metadata_path = utils.get_metadata_path(video_path)
 
     with open(metadata_path, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, ensure_ascii=False, indent=4)
+        json.dump(asdict(metadata), f, ensure_ascii=False, indent=4)
 
 
 def create_workspace(video_path: Path) -> None:
@@ -147,11 +148,13 @@ def create_workspace(video_path: Path) -> None:
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
 
-def create_and_store_metadata(video_path: Path) -> None:
+def create_and_store_metadata(video_path: Path) -> MatchMetadata:
     create_workspace(video_path)
     try:
         metadata = create_metadata(video_path)
         store(video_path, metadata)
+
+        return metadata
     except ValueError as e:
         raise CreateMetadataError(e)
 

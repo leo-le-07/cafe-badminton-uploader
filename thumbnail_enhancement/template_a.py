@@ -239,10 +239,10 @@ def render_thumbnail(video_path: Path):
         print(f"Missing selected thumbnail or metadata in {video_path.name}")
         return
 
-    team_1_names = metadata.get("team1Names")
-    team_2_names = metadata.get("team2Names")
+    team_1_names = metadata.team1_names
+    team_2_names = metadata.team2_names
     matchup_text = format_matchup_text(team_1_names, team_2_names)
-    tournament = metadata.get("tournament", "").strip()
+    tournament = metadata.tournament.strip()
     decor_style = get_theme_for_tournament(tournament)
 
     img = Image.open(selected_path)

@@ -50,10 +50,10 @@ def get_videos_ready_for_upload(video_paths: list[Path]) -> list[Path]:
 def upload(
     youtube_client: Any, video_path: Path, metadata: MatchMetadata
 ) -> str | None:
-    category = metadata.get("category", constants.CATEGORY_SPORTS)
-    description = metadata.get("description", "")
-    title = metadata.get("title", video_path.stem)
-    privacy_status = metadata.get("privacyStatus", "private")
+    category = metadata.category
+    description = metadata.description
+    title = metadata.title
+    privacy_status = metadata.privacy_status
 
     media = MediaFileUpload(
         video_path, mimetype="video/*", resumable=True, chunksize=CHUNK_SIZE_MB

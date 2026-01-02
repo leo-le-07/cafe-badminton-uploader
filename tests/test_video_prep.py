@@ -173,13 +173,13 @@ def test_create_metadata(mock_datetime):
 
     result = create_metadata(video_path)
 
-    assert result["matchType"] == "Men's Singles"
-    assert result["team1Names"] == ["Leo"]
-    assert result["team2Names"] == ["Khanh"]
-    assert result["tournament"] == "Summer Cup"
-    assert "Leo vs Khanh" in result["title"]
-    assert "Summer Cup" in result["title"]
-    assert "#sunbadminton" in result["description"]
+    assert result.match_type == "Men's Singles"
+    assert result.team1_names == ["Leo"]
+    assert result.team2_names == ["Khanh"]
+    assert result.tournament == "Summer Cup"
+    assert "Leo vs Khanh" in result.title
+    assert "Summer Cup" in result.title
+    assert "#sunbadminton" in result.description
 
 
 @patch("video_prep.datetime")
@@ -189,8 +189,8 @@ def test_create_metadata_doubles(mock_datetime):
 
     result = create_metadata(video_path)
 
-    assert result["matchType"] == "Men's Doubles"
-    assert result["team1Names"] == ["Den", "Tu"]
-    assert result["team2Names"] == ["Huy", "Ha"]
-    assert result["tournament"] == "Cafe Game"
-    assert "Den/Tu vs Huy/Ha" in result["title"]
+    assert result.match_type == "Men's Doubles"
+    assert result.team1_names == ["Den", "Tu"]
+    assert result.team2_names == ["Huy", "Ha"]
+    assert result.tournament == "Cafe Game"
+    assert "Den/Tu vs Huy/Ha" in result.title
