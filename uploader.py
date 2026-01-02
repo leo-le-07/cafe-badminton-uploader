@@ -1,8 +1,8 @@
-from schemas import MatchMetadata
+from schemas import MatchMetadata, UploadedRecord
+from dataclasses import asdict
 from googleapiclient.http import MediaFileUpload
 from auth_service import get_client
 import config
-import constants
 from pathlib import Path
 from tqdm import tqdm
 from typing import Any
@@ -108,17 +108,17 @@ def set_thumbnail(youtube_client: Any, video_id: str, thumbnail_path: Path) -> b
     return "error" not in response
 
 
-def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool):
+def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool) -> None:
     upload_record_path = get_upload_record_path(video_path)
-    upload_record = {
-        "videoId": video_id,
-        "uploadedAt": datetime.now().isoformat(),
-        "thumbnailSet": thumbnail_set,
-        "youtubeLink": f"https://youtu.be/{video_id}",
-    }
+    upload_record = UploadedRecord(
+        video_id=video_id,
+        uploaded_at=datetime.now().isoformat(),
+        thumbnail_set=thumbnail_set,
+        youtube_link=f"https://youtu.be/{video_id}",
+    )
 
     with open(upload_record_path, "w", encoding="utf-8") as f:
-        json.dump(upload_record, f, ensure_ascii=False, indent=4)
+        json.dump(asdict(upload_record), f, ensure_ascii=False, indent=4)
 
 
 def run():

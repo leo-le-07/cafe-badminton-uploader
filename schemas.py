@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 
 @dataclass(frozen=True)
@@ -11,3 +11,11 @@ class MatchMetadata:
     description: str
     category: str
     privacy_status: str
+
+
+@dataclass(frozen=True)
+class UploadedRecord:
+    video_id: str
+    uploaded_at: str
+    thumbnail_set: bool
+    youtube_link: str

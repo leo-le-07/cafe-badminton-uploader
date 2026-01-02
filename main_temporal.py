@@ -15,6 +15,7 @@ from temporal.client import (
 from temporalio.client import WorkflowHandle
 from logger import get_logger
 from constants import WORKFLOW_STAGE_WAITING_FOR_SELECTION
+from auth_service import authenticate
 
 logger = get_logger(__name__)
 
@@ -81,6 +82,15 @@ async def cmd_pending(args):
         sys.exit(1)
 
 
+def cmd_auth(args):
+    try:
+        authenticate()
+        logger.info("Authentication completed successfully")
+    except Exception as e:
+        logger.error(f"Authentication failed: {e}")
+        sys.exit(1)
+
+
 async def cmd_select(args):
     client = await get_client()
 
@@ -117,6 +127,13 @@ def main():
     subparsers = parser.add_subparsers(
         dest="command", help="Command to execute", metavar="COMMAND"
     )
+
+    parser_auth = subparsers.add_parser(
+        "auth",
+        help="Authenticate with Google OAuth service",
+        description="Open browser for OAuth authentication and save token for future use",
+    )
+    parser_auth.set_defaults(func=cmd_auth)
 
     parser_start = subparsers.add_parser(
         "start",
