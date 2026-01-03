@@ -33,12 +33,10 @@ async def cmd_start(args):
 
     for video_path in videos:
         try:
-            workflow_id = gen_workflow_id(video_path)
             options = VideoWorkflowOptions(
                 video_path=str(video_path), top_n=config.TOP_RANKED_CANDIDATES_NUM
             )
             await start_video_workflow(client, options)
-            logger.info(f"Started workflow for {video_path.name}: {workflow_id}")
         except Exception as e:
             logger.error(f"Failed to start workflow for {video_path.name}: {e}")
 

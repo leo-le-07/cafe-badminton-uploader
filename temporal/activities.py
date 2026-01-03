@@ -5,6 +5,7 @@ from temporalio import activity
 from video_prep import create_and_store_metadata, create_frame_candidates
 from pathlib import Path
 from uploader import upload_video_with_idempotency, set_thumbnail_for_video
+from cleanup import cleanup_video
 
 @activity.defn
 def create_metadata_activity(video_path: str) -> MatchMetadata:
@@ -47,3 +48,9 @@ def upload_video_activity(video_path: str) -> UploadedRecord:
 def set_thumbnail_activity(video_path: str) -> None:
     path = Path(video_path)
     set_thumbnail_for_video(path)
+
+
+@activity.defn
+def cleanup_activity(video_path: str) -> None:
+    path = Path(video_path)
+    cleanup_video(path)

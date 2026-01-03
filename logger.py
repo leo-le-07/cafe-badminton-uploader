@@ -21,6 +21,7 @@ def setup_logging(
 
     if enable_temporal_integration:
         logging.getLogger("temporalio").setLevel(logging.WARNING)
+        logging.getLogger("temporalio.workflow").setLevel(logging.INFO)
     logging.getLogger("google").setLevel(logging.WARNING)
     logging.getLogger("googleapiclient").setLevel(logging.WARNING)
 

@@ -7,6 +7,7 @@ from temporal.activities import (
     render_thumbnail_activity,
     upload_video_activity,
     set_thumbnail_activity,
+    cleanup_activity,
 )
 from temporal.client import get_client
 from constants import TEMPORAL_TASK_QUEUE
@@ -28,6 +29,7 @@ async def main():
                 render_thumbnail_activity,
                 upload_video_activity,
                 set_thumbnail_activity,
+                cleanup_activity,
             ],
             activity_executor=executor,
         )
