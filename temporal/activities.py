@@ -12,8 +12,8 @@ from uploader import (
 )
 from custom_exceptions import VideoAlreadyUploadedError
 from cleanup import cleanup_video
-
-
+from logger import get_logger
+logger = get_logger(__name__)
 @activity.defn
 def create_metadata_activity(video_path: str) -> MatchMetadata:
     path = Path(video_path)
@@ -49,7 +49,10 @@ def upload_video_activity(video_path: str) -> UploadedRecord:
         activity.heartbeat(f"Upload progress: {progress:.1f}%")
 
     try:
-        return upload_video_with_idempotency(path, heartbeat)
+        logger.info(f"Uploading video: {path}")
+        result = upload_video_with_idempotency(path, heartbeat)
+        logger.info(f"Uploaded video: {path}")
+        return result
     except VideoAlreadyUploadedError as e:
         raise ApplicationError(
             str(e),

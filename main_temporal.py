@@ -15,6 +15,7 @@ from temporalio.client import WorkflowHandle
 from logger import get_logger
 from constants import WORKFLOW_STAGE_WAITING_FOR_SELECTION
 from auth_service import authenticate
+from temporal.worker import main as worker_main
 
 logger = get_logger(__name__)
 
@@ -118,6 +119,17 @@ async def cmd_select(args):
         sys.exit(1)
 
 
+async def cmd_worker(args):
+    logger.info("Starting Temporal worker...")
+    try:
+        await worker_main()
+    except KeyboardInterrupt:
+        logger.info("Worker stopped by user")
+    except Exception as e:
+        logger.error(f"Worker error: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Temporal Workflow Manager - Start and manage video processing workflows",
@@ -154,6 +166,14 @@ def main():
         description="Automatically get all workflows waiting for selection and process each one with thumbnail selector",
     )
     parser_select.set_defaults(func=lambda args: asyncio.run(cmd_select(args)))
+
+    parser_worker = subparsers.add_parser(
+        "worker",
+        help="Start Temporal worker (long-running process)",
+        description="Start a long-running worker process that executes workflows and activities. "
+        "Runs until interrupted (Ctrl+C).",
+    )
+    parser_worker.set_defaults(func=lambda args: asyncio.run(cmd_worker(args)))
 
     args = parser.parse_args()
 

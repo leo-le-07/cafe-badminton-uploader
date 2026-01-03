@@ -27,54 +27,54 @@ Examples:
 
 ## Usage
 
+### Prerequisites
+
+1. **Start Temporal Server** (required for workflow execution):
+   ```bash
+   temporal server start-dev
+   ```
+   This starts a local Temporal development server. Keep this running in a separate terminal.
+
+2. **Start the Worker** (required to process workflows):
+   ```bash
+   APP_ENV=production uv run main_temporal.py worker
+   ```
+   Keep this running in a separate terminal. The worker will process workflows and activities.
+
 ### Environment Selection
 
 The tool supports multiple environment configurations via `APP_ENV`:
 
-**Development (default):**
 ```bash
-uv run main.py all
-# or explicitly:
-APP_ENV=dev uv run main.py all
+APP_ENV=production uv run main_temporal.py start
 ```
 
-**Production:**
+### CLI Commands
+
+#### Authenticate with YouTube
+
 ```bash
-APP_ENV=production uv run main.py all
+uv run main_temporal.py auth
 ```
+Opens browser for OAuth authentication and saves token for future use.
 
-### Running All Stages
+#### Start Workflows
 
 ```bash
-uv run main.py all
+uv run main_temporal.py start
 ```
+Scans the input directory and starts a workflow for each video found. All workflows will be processed concurrently by the worker.
 
-### Individual Stages
+#### List Pending Workflows
 
 ```bash
-uv run main.py prepare   # extract frames, create metadata
-uv run main.py rank      # rank thumbnails using CLIP
-uv run main.py select    # pick thumbnail (H/L to navigate, Enter/S to select)
-uv run main.py enhance   # render final thumbnail with graphics
-uv run main.py upload    # upload to YouTube
-uv run main.py cleanup   # move uploaded files to completed folder
+uv run main_temporal.py list
 ```
+Lists all workflows that are waiting for thumbnail selection.
 
-### Template Option for Enhance Stage
-
-```bash
-uv run main.py enhance --template template_b
-```
-
-### Running Module Scripts
-
-For development/testing, you can run modules directly:
+#### Select Thumbnails
 
 ```bash
-# Development environment (default)
-uv run python -m thumbnail_ranking.pipeline
-
-# Production environment
-APP_ENV=production uv run python -m thumbnail_ranking.pipeline
+uv run main_temporal.py select
 ```
 
