@@ -1,10 +1,10 @@
 from thumbnail_enhancement import render_thumbnail
-from schemas import MatchMetadata
+from schemas import MatchMetadata, UploadedRecord
 from thumbnail_ranking import rank_candidates, RankedImage
 from temporalio import activity
 from video_prep import create_and_store_metadata, create_frame_candidates
 from pathlib import Path
-
+from uploader import upload_video_with_idempotency, set_thumbnail_for_video
 
 @activity.defn
 def create_metadata_activity(video_path: str) -> MatchMetadata:
@@ -31,3 +31,19 @@ def rank_candidates_activity(video_path: str) -> list[RankedImage]:
 def render_thumbnail_activity(video_path: str) -> None:
     path = Path(video_path)
     render_thumbnail(path)
+
+
+@activity.defn
+def upload_video_activity(video_path: str) -> UploadedRecord:
+    path = Path(video_path)
+
+    def heartbeat(progress: float) -> None:
+        activity.heartbeat(f"Upload progress: {progress:.1f}%")
+
+    return upload_video_with_idempotency(path, heartbeat)
+
+
+@activity.defn
+def set_thumbnail_activity(video_path: str) -> None:
+    path = Path(video_path)
+    set_thumbnail_for_video(path)

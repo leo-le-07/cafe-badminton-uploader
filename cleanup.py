@@ -1,8 +1,7 @@
 import config
 import shutil
-from pathlib import Path
 
-from utils import get_upload_record_path, get_workspace_dir, scan_videos
+from utils import get_workspace_dir, scan_videos, get_uploaded_record
 
 
 def cleanup_uploaded_videos():
@@ -10,9 +9,9 @@ def cleanup_uploaded_videos():
     moved_count = 0
 
     for video_path in videos:
-        upload_record_path = get_upload_record_path(video_path)
+        uploaded_record = get_uploaded_record(video_path)
 
-        if not upload_record_path.exists():
+        if not uploaded_record:
             continue
 
         workspace_dir = get_workspace_dir(video_path)
@@ -31,7 +30,9 @@ def cleanup_uploaded_videos():
         except Exception as e:
             print(f"✗ Failed to move {video_path.name}: {e}")
 
-    print(f"\nCompleted: Moved {moved_count} uploaded video(s) to {config.COMPLETED_DIR}")
+    print(
+        f"\nCompleted: Moved {moved_count} uploaded video(s) to {config.COMPLETED_DIR}"
+    )
 
 
 def run():
@@ -40,4 +41,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-

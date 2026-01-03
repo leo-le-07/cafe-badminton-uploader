@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Any
 
@@ -20,10 +19,10 @@ logger = get_logger(__name__)
 def parse_channel_response(response: dict[str, Any]) -> ChannelInfo:
     if "items" not in response or not response["items"]:
         raise ValueError("Channel response missing items or items list is empty")
-    
+
     item = response["items"][0]
     snippet = item.get("snippet", {})
-    
+
     return ChannelInfo(
         channel_id=item["id"],
         title=snippet["title"],

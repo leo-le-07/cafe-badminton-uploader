@@ -9,6 +9,8 @@ from constants import (
     WORKFLOW_STAGE_WAITING_FOR_SELECTION,
     WORKFLOW_STAGE_SELECTED,
     WORKFLOW_STAGE_ENHANCING_THUMBNAIL,
+    WORKFLOW_STAGE_UPLOADING,
+    WORKFLOW_STAGE_SETTING_THUMBNAIL,
 )
 
 with workflow.unsafe.imports_passed_through():
@@ -17,6 +19,8 @@ with workflow.unsafe.imports_passed_through():
         create_frame_candidates_activity,
         rank_candidates_activity,
         render_thumbnail_activity,
+        upload_video_activity,
+        set_thumbnail_activity,
     )
 
 
@@ -74,4 +78,19 @@ class ProcessVideoWorkflow:
             video_path,
             start_to_close_timeout=timedelta(minutes=2),
         )
+
+        self.stage = WORKFLOW_STAGE_UPLOADING
+        await workflow.execute_activity(
+            upload_video_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=120),
+        )
+
+        self.stage = WORKFLOW_STAGE_SETTING_THUMBNAIL
+        await workflow.execute_activity(
+            set_thumbnail_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=2),
+        )
+
         workflow.logger.info(f"Video processing completed for {video_path}")

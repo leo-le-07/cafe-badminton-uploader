@@ -5,6 +5,8 @@ from temporal.activities import (
     create_frame_candidates_activity,
     rank_candidates_activity,
     render_thumbnail_activity,
+    upload_video_activity,
+    set_thumbnail_activity,
 )
 from temporal.client import get_client
 from constants import TEMPORAL_TASK_QUEUE
@@ -24,6 +26,8 @@ async def main():
                 create_frame_candidates_activity,
                 rank_candidates_activity,
                 render_thumbnail_activity,
+                upload_video_activity,
+                set_thumbnail_activity,
             ],
             activity_executor=executor,
         )

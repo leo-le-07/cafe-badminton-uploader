@@ -1,4 +1,4 @@
-from schemas import MatchMetadata
+from schemas import MatchMetadata, UploadedRecord
 import config
 from pathlib import Path
 from collections.abc import Iterator
@@ -55,3 +55,12 @@ def get_metadata(video_path: Path) -> MatchMetadata:
 
 def get_upload_record_path(video_path: Path) -> Path:
     return get_workspace_dir(video_path) / UPLOADED_FILE
+
+
+def get_uploaded_record(video_path: Path) -> UploadedRecord | None:
+    upload_record_path = get_upload_record_path(video_path)
+    if not upload_record_path.exists():
+        return None
+    with open(upload_record_path, "r", encoding="utf-8") as f:
+        upload_record_dict = json.load(f)
+    return UploadedRecord(**upload_record_dict)
