@@ -72,15 +72,3 @@ def rank_candidates(
         copied_paths.append(dest_path)
 
     return top_ranked
-
-
-def run():
-    videos = scan_videos(config.INPUT_DIR)
-
-    for video_path in videos:
-        logger.info(f"Ranking candidates for {video_path.name}")
-        try:
-            ranked = rank_candidates(video_path)
-            logger.info(f"Ranked and stored top {len(ranked)} candidates")
-        except Exception as e:
-            logger.error(f"Error ranking candidates for {video_path.name}: {e}")

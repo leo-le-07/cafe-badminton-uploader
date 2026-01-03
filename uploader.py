@@ -195,36 +195,3 @@ def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool) -> 
 
     with open(upload_record_path, "w", encoding="utf-8") as f:
         json.dump(asdict(upload_record), f, ensure_ascii=False, indent=4)
-
-
-def run():
-    video_paths = list(scan_videos(config.INPUT_DIR))
-    video_paths = get_videos_ready_for_upload(video_paths)
-    client = get_client()
-
-    for video_path in video_paths:
-        thumbnail_path = get_thumbnail_path(video_path)
-        metadata = get_metadata(video_path)
-
-        total_size = video_path.stat().st_size
-        pbar = tqdm(
-            total=total_size,
-            unit="B",
-            unit_scale=True,
-            desc=f"Upload {video_path.name}",
-        )
-
-        def progress_callback(percent: float) -> None:
-            current_bytes = int((percent / 100) * total_size)
-            pbar.n = current_bytes
-            pbar.refresh()
-
-        video_id = upload(client, video_path, metadata, progress_callback)
-        pbar.close()
-
-        set_thumbnail(client, video_id, thumbnail_path)
-        save_upload_record(video_path, video_id, thumbnail_set=True)
-
-
-if __name__ == "__main__":
-    run()

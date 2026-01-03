@@ -192,18 +192,3 @@ def create_frame_candidates(video_path: Path) -> int:
     finally:
         cap.release()
     return total_stored
-
-
-def run():
-    videos = utils.scan_videos(config.INPUT_DIR)
-
-    for video_path in videos:
-        try:
-            create_and_store_metadata(video_path)
-            create_frame_candidates(video_path)
-        except CreateMetadataError as e:
-            logger.error(f"Skipping {video_path.name}: {e}")
-
-
-if __name__ == "__main__":
-    run()

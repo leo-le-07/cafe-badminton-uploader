@@ -1,4 +1,3 @@
-import config
 from pathlib import Path
 import cv2
 import shutil
@@ -7,7 +6,6 @@ from typing import Optional
 
 from utils import (
     get_selected_candidate_path,
-    scan_videos,
     get_top_ranked_candidates_dir,
 )
 from logger import get_logger
@@ -82,14 +80,6 @@ def _select_thumbnail_gui(video_path: Path) -> Optional[Path]:
     return selected_image
 
 
-def select_thumbnail(video_path: Path):
-    selected_image = _select_thumbnail_gui(video_path)
-    
-    if selected_image:
-        selected_path = get_selected_candidate_path(video_path)
-        shutil.copyfile(selected_image, selected_path)
-
-
 async def select_thumbnail_with_workflow(workflow_handle) -> None:
     video_path_str = await workflow_handle.query("get_video_path")
     video_path = Path(video_path_str)
@@ -107,18 +97,4 @@ async def select_thumbnail_with_workflow(workflow_handle) -> None:
             logger.error(f"Error sending signal to workflow: {e}")
             raise
     else:
-        logger.warning("No thumbnail selected. Workflow will remain waiting.")
-
-
-def run():
-    videos = scan_videos(config.INPUT_DIR)
-
-    for video_file in videos:
-        select_thumbnail(video_file)
-
-    cv2.destroyAllWindows()
-    cv2.waitKey(1)
-
-
-if __name__ == "__main__":
-    run()
+            logger.warning("No thumbnail selected. Workflow will remain waiting.")
