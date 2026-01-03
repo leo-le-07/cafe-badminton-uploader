@@ -10,7 +10,6 @@ from temporal.client import (
     VideoWorkflowOptions,
     get_client,
     start_video_workflow,
-    gen_workflow_id,
 )
 from temporalio.client import WorkflowHandle
 from logger import get_logger
@@ -41,7 +40,9 @@ async def cmd_start(args):
             logger.error(f"Failed to start workflow for {video_path.name}: {e}")
 
 
-async def get_workflow_handlers_waiting_for_selection(client) -> List[tuple[str, WorkflowHandle, Path]]:
+async def get_workflow_handlers_waiting_for_selection(
+    client,
+) -> List[tuple[str, WorkflowHandle, Path]]:
     workflows = []
     async for workflow_desc in client.list_workflows(
         query='WorkflowType = "ProcessVideoWorkflow" AND ExecutionStatus = "Running"'

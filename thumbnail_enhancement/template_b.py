@@ -8,6 +8,7 @@ from thumbnail_enhancement.common import (
 )
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
 from logger import get_logger
+from custom_exceptions import MissingThumbnailDataError
 
 logger = get_logger(__name__)
 
@@ -308,14 +309,15 @@ def prepare_image_side(selected_path: Path, image_w: int, canvas_h: int) -> Imag
     )
 
 
-def render_thumbnail(video_path: Path) -> None:
+def render_thumbnail(video_path: Path) -> str:
     selected_path = get_selected_candidate_path(video_path)
     output_path = get_thumbnail_path(video_path)
     metadata = get_metadata(video_path)
 
     if not selected_path.exists() or not metadata:
-        logger.warning(f"Skipping {video_path.name}: Missing data")
-        return
+        raise MissingThumbnailDataError(
+            f"Missing required data for {video_path.name} either selected thumbnail or metadata"
+        )
 
     CANVAS_W, CANVAS_H = 1920, 1080
     final_img = Image.new("RGB", (CANVAS_W, CANVAS_H), COLOR_BLACK)
@@ -349,4 +351,4 @@ def render_thumbnail(video_path: Path) -> None:
     )
 
     final_img.save(output_path, quality=95)
-    logger.info(f"Rendered thumbnail: {output_path}")
+    return str(output_path)

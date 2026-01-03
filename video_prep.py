@@ -130,7 +130,6 @@ def create_metadata(video_path: Path) -> MatchMetadata:
         title=title,
         description=description,
         category=constants.CATEGORY_SPORTS,
-        privacy_status=config.VIDEO_PRIVACY_STATUS,
     )
 
     return metadata

@@ -15,6 +15,7 @@ from thumbnail_enhancement.common import (
 )
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
 from logger import get_logger
+from custom_exceptions import MissingThumbnailDataError
 
 logger = get_logger(__name__)
 
@@ -233,14 +234,15 @@ def draw_tournament_badge(
     return img_pil.convert("RGB")
 
 
-def render_thumbnail(video_path: Path):
+def render_thumbnail(video_path: Path) -> str:
     selected_path = get_selected_candidate_path(video_path)
     output_path = get_thumbnail_path(video_path)
     metadata = get_metadata(video_path)
 
     if not selected_path.exists() or not metadata:
-        logger.warning(f"Missing selected thumbnail or metadata in {video_path.name}")
-        return
+        raise MissingThumbnailDataError(
+            f"Missing required data for {video_path.name} either selected thumbnail or metadata"
+        )
 
     team_1_names = metadata.team1_names
     team_2_names = metadata.team2_names
@@ -256,4 +258,4 @@ def render_thumbnail(video_path: Path):
     img = draw_tournament_badge(img, tournament, decor_style)
 
     img.save(output_path, quality=95)
-    logger.info(f"Rendered thumbnail: {output_path}")
+    return str(output_path)

@@ -7,17 +7,21 @@ from temporal.activities import (
     render_thumbnail_activity,
     upload_video_activity,
     set_thumbnail_activity,
+    update_video_visibility_activity,
     cleanup_activity,
 )
 from temporal.client import get_client
 from constants import TEMPORAL_TASK_QUEUE
 from temporalio.worker import Worker
+from logger import get_logger
 import asyncio
+
+logger = get_logger(__name__)
 
 
 async def main():
     client = await get_client()
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         worker = Worker(
             client,
             task_queue=TEMPORAL_TASK_QUEUE,
@@ -29,12 +33,13 @@ async def main():
                 render_thumbnail_activity,
                 upload_video_activity,
                 set_thumbnail_activity,
+                update_video_visibility_activity,
                 cleanup_activity,
             ],
             activity_executor=executor,
         )
 
-        print(f"Worker started for task queue: {TEMPORAL_TASK_QUEUE}")
+        logger.info(f"Worker started for task queue: {TEMPORAL_TASK_QUEUE}")
         await worker.run()
 
 

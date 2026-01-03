@@ -32,8 +32,6 @@ def rank_candidates(
     if not all_metrics:
         raise ValueError(f"No candidate images found in {candidate_dir}")
 
-    # Always calculate adaptive thresholds based on video statistics
-    logger.info(f"Calculating adaptive thresholds for {len(all_metrics)} candidates")
     statistics = calculate_statistics(all_metrics)
     quality_thresholds = calculate_adaptive_thresholds(statistics)
 
@@ -86,4 +84,3 @@ def run():
             logger.info(f"Ranked and stored top {len(ranked)} candidates")
         except Exception as e:
             logger.error(f"Error ranking candidates for {video_path.name}: {e}")
-

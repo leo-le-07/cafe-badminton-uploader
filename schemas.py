@@ -10,7 +10,6 @@ class MatchMetadata:
     title: str
     description: str
     category: str
-    privacy_status: str
 
 
 @dataclass(frozen=True)

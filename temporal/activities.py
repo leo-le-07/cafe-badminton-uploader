@@ -2,10 +2,17 @@ from thumbnail_enhancement import render_thumbnail
 from schemas import MatchMetadata, UploadedRecord
 from thumbnail_ranking import rank_candidates, RankedImage
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 from video_prep import create_and_store_metadata, create_frame_candidates
 from pathlib import Path
-from uploader import upload_video_with_idempotency, set_thumbnail_for_video
+from uploader import (
+    upload_video_with_idempotency,
+    set_thumbnail_for_video,
+    update_video_visibility_for_video,
+)
+from custom_exceptions import VideoAlreadyUploadedError
 from cleanup import cleanup_video
+
 
 @activity.defn
 def create_metadata_activity(video_path: str) -> MatchMetadata:
@@ -29,9 +36,9 @@ def rank_candidates_activity(video_path: str) -> list[RankedImage]:
 
 
 @activity.defn
-def render_thumbnail_activity(video_path: str) -> None:
+def render_thumbnail_activity(video_path: str) -> str:
     path = Path(video_path)
-    render_thumbnail(path)
+    return render_thumbnail(path)
 
 
 @activity.defn
@@ -41,7 +48,14 @@ def upload_video_activity(video_path: str) -> UploadedRecord:
     def heartbeat(progress: float) -> None:
         activity.heartbeat(f"Upload progress: {progress:.1f}%")
 
-    return upload_video_with_idempotency(path, heartbeat)
+    try:
+        return upload_video_with_idempotency(path, heartbeat)
+    except VideoAlreadyUploadedError as e:
+        raise ApplicationError(
+            str(e),
+            type="VideoAlreadyUploadedError",
+            non_retryable=True,
+        )
 
 
 @activity.defn
@@ -51,6 +65,12 @@ def set_thumbnail_activity(video_path: str) -> None:
 
 
 @activity.defn
-def cleanup_activity(video_path: str) -> None:
+def update_video_visibility_activity(video_path: str) -> None:
     path = Path(video_path)
-    cleanup_video(path)
+    update_video_visibility_for_video(path)
+
+
+@activity.defn
+def cleanup_activity(video_path: str) -> str:
+    path = Path(video_path)
+    return cleanup_video(path)

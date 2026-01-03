@@ -1,4 +1,6 @@
+import constants
 from schemas import MatchMetadata, UploadedRecord
+from custom_exceptions import VideoAlreadyUploadedError
 from dataclasses import asdict
 from googleapiclient.http import MediaFileUpload
 from auth_service import get_client
@@ -54,7 +56,6 @@ def upload(
     category = metadata.category
     description = metadata.description
     title = metadata.title
-    privacy_status = metadata.privacy_status
 
     media = MediaFileUpload(
         video_path, mimetype="video/*", resumable=True, chunksize=CHUNK_SIZE_MB
@@ -69,7 +70,7 @@ def upload(
                 "title": title,
             },
             "status": {
-                "privacyStatus": privacy_status,
+                "privacyStatus": constants.VISIBILITY_PRIVATE,
                 "selfDeclaredMadeForKids": False,
             },
         },
@@ -78,7 +79,6 @@ def upload(
 
     total_size = video_path.stat().st_size
     response = None
-    previous_progress = 0
 
     while response is None:
         status, response = request.next_chunk()
@@ -86,7 +86,6 @@ def upload(
             current_progress = int(status.progress() * total_size)
             progress_percent = (current_progress / total_size) * 100
             progress_callback(progress_percent)
-            previous_progress = current_progress
 
     video_id = response.get("id")
     if not video_id:
@@ -112,7 +111,10 @@ def upload_video_with_idempotency(
 ) -> UploadedRecord:
     uploaded_record = get_uploaded_record(video_path)
     if uploaded_record and uploaded_record.video_id:
-        return uploaded_record
+        raise VideoAlreadyUploadedError(
+            f"Video {video_path.name} is already uploaded with video ID {uploaded_record.video_id}. "
+            f"YouTube link: {uploaded_record.youtube_link}"
+        )
 
     metadata = get_metadata(video_path)
     if not metadata:
@@ -131,27 +133,59 @@ def upload_video_with_idempotency(
 def set_thumbnail_for_video(video_path: Path) -> None:
     upload_record = get_uploaded_record(video_path)
     if not upload_record or not upload_record.video_id:
-        raise RuntimeError(f"Video not uploaded yet. Cannot set thumbnail for {video_path.name}")
-    
+        raise RuntimeError(
+            f"Video not uploaded yet. Cannot set thumbnail for {video_path.name}"
+        )
+
     if upload_record.thumbnail_set:
         return
-    
+
     youtube_client = get_client()
     thumbnail_path = get_thumbnail_path(video_path)
-    
+
     if not thumbnail_path.exists():
         raise FileNotFoundError(f"Thumbnail not found: {thumbnail_path}")
-    
+
     set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)
     save_upload_record(video_path, upload_record.video_id, thumbnail_set=True)
 
 
+def update_video_visibility_for_video(video_path: Path) -> None:
+    upload_record = get_uploaded_record(video_path)
+    if not upload_record or not upload_record.video_id:
+        raise RuntimeError(
+            f"Video not uploaded yet. Cannot update visibility for {video_path.name}"
+        )
+
+    privacy_status = config.VIDEO_PRIVACY_STATUS
+    youtube_client = get_client()
+
+    request = youtube_client.videos().update(
+        part="status",
+        body={
+            "id": upload_record.video_id,
+            "status": {
+                "privacyStatus": privacy_status,
+                "selfDeclaredMadeForKids": False,
+            },
+        },
+    )
+
+    response = request.execute()
+    if "error" in response:
+        raise RuntimeError(
+            f"Failed to update video visibility: {response.get('error', {})}"
+        )
+
+
 def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool) -> None:
     upload_record_path = get_upload_record_path(video_path)
-    
+
     existing_record = get_uploaded_record(video_path)
-    uploaded_at = existing_record.uploaded_at if existing_record else datetime.now().isoformat()
-    
+    uploaded_at = (
+        existing_record.uploaded_at if existing_record else datetime.now().isoformat()
+    )
+
     upload_record = UploadedRecord(
         video_id=video_id,
         uploaded_at=uploaded_at,
@@ -164,7 +198,6 @@ def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool) -> 
 
 
 def run():
-
     video_paths = list(scan_videos(config.INPUT_DIR))
     video_paths = get_videos_ready_for_upload(video_paths)
     client = get_client()
@@ -174,7 +207,12 @@ def run():
         metadata = get_metadata(video_path)
 
         total_size = video_path.stat().st_size
-        pbar = tqdm(total=total_size, unit="B", unit_scale=True, desc=f"Upload {video_path.name}")
+        pbar = tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            desc=f"Upload {video_path.name}",
+        )
 
         def progress_callback(percent: float) -> None:
             current_bytes = int((percent / 100) * total_size)

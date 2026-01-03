@@ -4,7 +4,9 @@ from pathlib import Path
 import config
 from temporalio.client import Client
 from datetime import datetime
+from logger import get_logger
 
+logger = get_logger(__name__)
 
 @dataclass
 class VideoWorkflowOptions:
@@ -26,7 +28,9 @@ def gen_workflow_id(video_path: Path) -> str:
 
 async def start_video_workflow(client: Client, options: VideoWorkflowOptions):
     workflow_id = gen_workflow_id(Path(options.video_path))
-    return await client.execute_workflow(
+
+    logger.info(f"Starting video workflow for {options.video_path} with ID {workflow_id}")
+    return await client.start_workflow(
         "ProcessVideoWorkflow",
         options.video_path,
         id=workflow_id,

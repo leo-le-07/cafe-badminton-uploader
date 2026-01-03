@@ -11,6 +11,7 @@ from constants import (
     WORKFLOW_STAGE_ENHANCING_THUMBNAIL,
     WORKFLOW_STAGE_UPLOADING,
     WORKFLOW_STAGE_SETTING_THUMBNAIL,
+    WORKFLOW_STAGE_UPDATING_VISIBILITY,
     WORKFLOW_STAGE_COMPLETED,
 )
 
@@ -22,6 +23,7 @@ with workflow.unsafe.imports_passed_through():
         render_thumbnail_activity,
         upload_video_activity,
         set_thumbnail_activity,
+        update_video_visibility_activity,
         cleanup_activity,
     )
 
@@ -56,33 +58,7 @@ class ProcessVideoWorkflow:
         await workflow.execute_activity(
             create_metadata_activity,
             video_path,
-            start_to_close_timeout=timedelta(minutes=2),
-        )
-
-        self.stage = WORKFLOW_STAGE_EXTRACTING_FRAMES
-        await workflow.execute_activity(
-            create_frame_candidates_activity,
-            video_path,
             start_to_close_timeout=timedelta(minutes=5),
-        )
-
-        self.stage = WORKFLOW_STAGE_RANKING_CANDIDATES
-        await workflow.execute_activity(
-            rank_candidates_activity,
-            video_path,
-            start_to_close_timeout=timedelta(minutes=5),
-        )
-
-        self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
-
-        workflow.logger.info(f"Waiting for thumbnail selection for {video_path}")
-        await workflow.wait_condition(lambda: self.selected)
-
-        self.stage = WORKFLOW_STAGE_ENHANCING_THUMBNAIL
-        await workflow.execute_activity(
-            render_thumbnail_activity,
-            video_path,
-            start_to_close_timeout=timedelta(minutes=2),
         )
 
         self.stage = WORKFLOW_STAGE_UPLOADING
@@ -92,18 +68,50 @@ class ProcessVideoWorkflow:
             start_to_close_timeout=timedelta(minutes=120),
         )
 
+        self.stage = WORKFLOW_STAGE_EXTRACTING_FRAMES
+        await workflow.execute_activity(
+            create_frame_candidates_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=30),
+        )
+
+        self.stage = WORKFLOW_STAGE_RANKING_CANDIDATES
+        await workflow.execute_activity(
+            rank_candidates_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=30),
+        )
+
+        self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
+        workflow.logger.info(f"Waiting for thumbnail selection for {video_path}")
+        await workflow.wait_condition(lambda: self.selected)
+
+        self.stage = WORKFLOW_STAGE_ENHANCING_THUMBNAIL
+        await workflow.execute_activity(
+            render_thumbnail_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=10),
+        )
+
         self.stage = WORKFLOW_STAGE_SETTING_THUMBNAIL
         await workflow.execute_activity(
             set_thumbnail_activity,
             video_path,
-            start_to_close_timeout=timedelta(minutes=2),
+            start_to_close_timeout=timedelta(minutes=5),
+        )
+
+        self.stage = WORKFLOW_STAGE_UPDATING_VISIBILITY
+        await workflow.execute_activity(
+            update_video_visibility_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=5),
         )
 
         self.stage = WORKFLOW_STAGE_COMPLETED
         await workflow.execute_activity(
             cleanup_activity,
             video_path,
-            start_to_close_timeout=timedelta(minutes=2),
+            start_to_close_timeout=timedelta(minutes=5),
         )
 
         workflow.logger.info(f"Workflow completed for {video_path}")
