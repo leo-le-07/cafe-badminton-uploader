@@ -9,7 +9,7 @@ from thumbnail_ranking.quality_filter import (
     calculate_adaptive_thresholds,
 )
 from thumbnail_ranking.clip_ranker import RankedImage, rank_images
-from utils import get_candidate_dir, get_top_ranked_candidates_dir, scan_videos
+from utils import get_candidate_dir, get_top_ranked_candidates_dir
 from logger import get_logger
 import config
 
@@ -17,12 +17,13 @@ logger = get_logger(__name__)
 
 
 def rank_candidates(
-    video_path: Path,
+    video_path: str,
     top_n: int | None = None,
 ) -> list[RankedImage]:
+    path = Path(video_path)
     if top_n is None:
         top_n = config.TOP_RANKED_CANDIDATES_NUM
-    candidate_dir = get_candidate_dir(video_path)
+    candidate_dir = get_candidate_dir(path)
 
     if not candidate_dir.exists():
         raise ValueError(f"Candidates directory does not exist: {candidate_dir}")
@@ -54,7 +55,7 @@ def rank_candidates(
     if not top_ranked:
         raise ValueError("No ranked images to store")
 
-    top_candidates_dir = get_top_ranked_candidates_dir(video_path)
+    top_candidates_dir = get_top_ranked_candidates_dir(path)
     top_candidates_dir.mkdir(parents=True, exist_ok=True)
 
     for existing in top_candidates_dir.glob("*.jpg"):

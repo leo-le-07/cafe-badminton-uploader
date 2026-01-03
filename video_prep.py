@@ -147,28 +147,30 @@ def create_workspace(video_path: Path) -> None:
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
 
-def create_and_store_metadata(video_path: Path) -> MatchMetadata:
-    create_workspace(video_path)
+def create_and_store_metadata(video_path: str) -> MatchMetadata:
+    path = Path(video_path)
+    create_workspace(path)
     try:
-        metadata = create_metadata(video_path)
-        store(video_path, metadata)
+        metadata = create_metadata(path)
+        store(path, metadata)
 
         return metadata
     except ValueError as e:
         raise CreateMetadataError(e)
 
 
-def create_frame_candidates(video_path: Path) -> int:
-    candidate_dir = utils.get_candidate_dir(video_path)
+def create_frame_candidates(video_path: str) -> int:
+    path = Path(video_path)
+    candidate_dir = utils.get_candidate_dir(path)
     num_candidates = config.CANDIDATE_THUMBNAIL_NUM
 
     if candidate_dir.exists():
         shutil.rmtree(candidate_dir)
 
-    cap = cv2.VideoCapture(str(video_path.resolve()))
+    cap = cv2.VideoCapture(str(path.resolve()))
 
     if not cap.isOpened():
-        raise IOError(f"Error opening video file: {video_path}")
+        raise IOError(f"Error opening video file: {path}")
 
     try:
         total_stored = 0
@@ -182,7 +184,7 @@ def create_frame_candidates(video_path: Path) -> int:
             ret, frame = cap.read()
 
             if not ret:
-                logger.warning(f"Could not read frame {frame_idx} from {video_path}")
+                logger.warning(f"Could not read frame {frame_idx} from {path}")
                 continue
 
             out_path = candidate_dir / f"frame_{frame_idx}.jpg"

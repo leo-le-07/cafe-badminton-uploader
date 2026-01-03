@@ -15,7 +15,6 @@ from utils import (
     get_thumbnail_path,
     get_upload_record_path,
     get_uploaded_record,
-    scan_videos,
     get_metadata_path,
 )
 
@@ -106,55 +105,58 @@ def set_thumbnail(youtube_client: Any, video_id: str, thumbnail_path: Path) -> N
 
 
 def upload_video_with_idempotency(
-    video_path: Path,
+    video_path: str,
     heartbeat_callback: Callable[[float], None] | None = None,
 ) -> UploadedRecord:
-    uploaded_record = get_uploaded_record(video_path)
+    path = Path(video_path)
+    uploaded_record = get_uploaded_record(path)
     if uploaded_record and uploaded_record.video_id:
         raise VideoAlreadyUploadedError(
-            f"Video {video_path.name} is already uploaded with video ID {uploaded_record.video_id}. "
+            f"Video {path.name} is already uploaded with video ID {uploaded_record.video_id}. "
             f"YouTube link: {uploaded_record.youtube_link}"
         )
 
-    metadata = get_metadata(video_path)
+    metadata = get_metadata(path)
     if not metadata:
         raise ValueError("Metadata not found for video upload.")
 
     youtube_client = get_client()
-    video_id = upload(youtube_client, video_path, metadata, heartbeat_callback)
-    save_upload_record(video_path, video_id, thumbnail_set=False)
+    video_id = upload(youtube_client, path, metadata, heartbeat_callback)
+    save_upload_record(path, video_id, thumbnail_set=False)
 
-    uploaded_record = get_uploaded_record(video_path)
+    uploaded_record = get_uploaded_record(path)
     if not uploaded_record:
         raise RuntimeError("Failed to retrieve upload record after saving")
     return uploaded_record
 
 
-def set_thumbnail_for_video(video_path: Path) -> None:
-    upload_record = get_uploaded_record(video_path)
+def set_thumbnail_for_video(video_path: str) -> None:
+    path = Path(video_path)
+    upload_record = get_uploaded_record(path)
     if not upload_record or not upload_record.video_id:
         raise RuntimeError(
-            f"Video not uploaded yet. Cannot set thumbnail for {video_path.name}"
+            f"Video not uploaded yet. Cannot set thumbnail for {path.name}"
         )
 
     if upload_record.thumbnail_set:
         return
 
     youtube_client = get_client()
-    thumbnail_path = get_thumbnail_path(video_path)
+    thumbnail_path = get_thumbnail_path(path)
 
     if not thumbnail_path.exists():
         raise FileNotFoundError(f"Thumbnail not found: {thumbnail_path}")
 
     set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)
-    save_upload_record(video_path, upload_record.video_id, thumbnail_set=True)
+    save_upload_record(path, upload_record.video_id, thumbnail_set=True)
 
 
-def update_video_visibility_for_video(video_path: Path) -> None:
-    upload_record = get_uploaded_record(video_path)
+def update_video_visibility_for_video(video_path: str) -> None:
+    path = Path(video_path)
+    upload_record = get_uploaded_record(path)
     if not upload_record or not upload_record.video_id:
         raise RuntimeError(
-            f"Video not uploaded yet. Cannot update visibility for {video_path.name}"
+            f"Video not uploaded yet. Cannot update visibility for {path.name}"
         )
 
     privacy_status = config.VIDEO_PRIVACY_STATUS

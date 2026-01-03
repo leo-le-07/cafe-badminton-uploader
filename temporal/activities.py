@@ -4,7 +4,6 @@ from thumbnail_ranking import rank_candidates, RankedImage
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 from video_prep import create_and_store_metadata, create_frame_candidates
-from pathlib import Path
 from uploader import (
     upload_video_with_idempotency,
     set_thumbnail_for_video,
@@ -13,45 +12,39 @@ from uploader import (
 from custom_exceptions import VideoAlreadyUploadedError
 from cleanup import cleanup_video
 from logger import get_logger
+
 logger = get_logger(__name__)
+
+
 @activity.defn
 def create_metadata_activity(video_path: str) -> MatchMetadata:
-    path = Path(video_path)
-    return create_and_store_metadata(path)
+    return create_and_store_metadata(video_path)
 
 
 @activity.defn
 def create_frame_candidates_activity(video_path: str) -> int:
-    path = Path(video_path)
-    result = create_frame_candidates(path)
-    return result
+    return create_frame_candidates(video_path)
 
 
 @activity.defn
 def rank_candidates_activity(video_path: str) -> list[RankedImage]:
-    path = Path(video_path)
-    top_ranked = rank_candidates(path)
-
-    return top_ranked
+    return rank_candidates(video_path)
 
 
 @activity.defn
 def render_thumbnail_activity(video_path: str) -> str:
-    path = Path(video_path)
-    return render_thumbnail(path)
+    return render_thumbnail(video_path)
 
 
 @activity.defn
 def upload_video_activity(video_path: str) -> UploadedRecord:
-    path = Path(video_path)
-
     def heartbeat(progress: float) -> None:
         activity.heartbeat(f"Upload progress: {progress:.1f}%")
 
     try:
-        logger.info(f"Uploading video: {path}")
-        result = upload_video_with_idempotency(path, heartbeat)
-        logger.info(f"Uploaded video: {path}")
+        logger.info(f"Uploading video: {video_path}")
+        result = upload_video_with_idempotency(video_path, heartbeat)
+        logger.info(f"Uploaded video: {video_path}")
         return result
     except VideoAlreadyUploadedError as e:
         raise ApplicationError(
@@ -63,17 +56,14 @@ def upload_video_activity(video_path: str) -> UploadedRecord:
 
 @activity.defn
 def set_thumbnail_activity(video_path: str) -> None:
-    path = Path(video_path)
-    set_thumbnail_for_video(path)
+    set_thumbnail_for_video(video_path)
 
 
 @activity.defn
 def update_video_visibility_activity(video_path: str) -> None:
-    path = Path(video_path)
-    update_video_visibility_for_video(path)
+    update_video_visibility_for_video(video_path)
 
 
 @activity.defn
 def cleanup_activity(video_path: str) -> str:
-    path = Path(video_path)
-    return cleanup_video(path)
+    return cleanup_video(video_path)
