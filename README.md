@@ -37,7 +37,7 @@ Examples:
 
 2. **Start the Worker** (required to process workflows):
    ```bash
-   APP_ENV=production uv run main_temporal.py worker
+   APP_ENV=production uv run main.py worker
    ```
    Keep this running in a separate terminal. The worker will process workflows and activities.
 
@@ -46,7 +46,7 @@ Examples:
 The tool supports multiple environment configurations via `APP_ENV`:
 
 ```bash
-APP_ENV=production uv run main_temporal.py start
+APP_ENV=production uv run main.py start
 ```
 
 ### CLI Commands
@@ -54,27 +54,49 @@ APP_ENV=production uv run main_temporal.py start
 #### Authenticate with YouTube
 
 ```bash
-uv run main_temporal.py auth
+uv run main.py auth
 ```
 Opens browser for OAuth authentication and saves token for future use.
 
 #### Start Workflows
 
 ```bash
-uv run main_temporal.py start
+uv run main.py start
 ```
 Scans the input directory and starts a workflow for each video found. All workflows will be processed concurrently by the worker.
 
 #### List Pending Workflows
 
 ```bash
-uv run main_temporal.py list
+uv run main.py list
 ```
 Lists all workflows that are waiting for thumbnail selection.
 
 #### Select Thumbnails
 
 ```bash
-uv run main_temporal.py select
+uv run main.py select
+```
+Processes all workflows waiting for thumbnail selection interactively.
+
+#### Debug Individual Steps
+
+```bash
+uv run main.py debug <step> <video_path>
+```
+
+Run individual workflow steps for debugging without executing the full workflow. Available steps:
+- `metadata` - Create and store video metadata
+- `frames` - Extract frame candidates
+- `rank` - Rank thumbnail candidates
+- `render` - Render final thumbnail
+- `upload` - Upload video to YouTube
+- `set-thumbnail` - Set thumbnail for uploaded video
+- `update-visibility` - Update video visibility
+- `cleanup` - Move video to completed directory
+
+Example:
+```bash
+uv run main.py debug metadata input/md_HuyzVietvsThezLeo.mov
 ```
 

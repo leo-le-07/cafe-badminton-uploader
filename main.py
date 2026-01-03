@@ -16,6 +16,16 @@ from logger import get_logger
 from constants import WORKFLOW_STAGE_WAITING_FOR_SELECTION
 from auth_service import authenticate
 from temporal.worker import main as worker_main
+from temporal.activities import (
+    create_metadata_activity,
+    create_frame_candidates_activity,
+    rank_candidates_activity,
+    render_thumbnail_activity,
+    upload_video_activity,
+    set_thumbnail_activity,
+    update_video_visibility_activity,
+    cleanup_activity,
+)
 
 logger = get_logger(__name__)
 
@@ -61,7 +71,7 @@ async def get_workflow_handlers_waiting_for_selection(
     return workflows
 
 
-async def cmd_pending(args):
+async def cmd_list(args):
     client = await get_client()
 
     try:
@@ -130,6 +140,41 @@ async def cmd_worker(args):
         sys.exit(1)
 
 
+def cmd_debug(args):
+    step = args.step
+    video_path = args.video_path
+
+    activities = {
+        "metadata": create_metadata_activity,
+        "frames": create_frame_candidates_activity,
+        "rank": rank_candidates_activity,
+        "render": render_thumbnail_activity,
+        "upload": upload_video_activity,
+        "set-thumbnail": set_thumbnail_activity,
+        "update-visibility": update_video_visibility_activity,
+        "cleanup": cleanup_activity,
+    }
+
+    if step not in activities:
+        logger.error(
+            f"Unknown step: {step}\n"
+            f"Available steps: {', '.join(activities.keys())}"
+        )
+        sys.exit(1)
+
+    logger.info(f"Running step '{step}' for {video_path}")
+
+    try:
+        result = activities[step](video_path)
+        logger.info(f"Success: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Temporal Workflow Manager - Start and manage video processing workflows",
@@ -153,12 +198,12 @@ def main():
     )
     parser_start.set_defaults(func=lambda args: asyncio.run(cmd_start(args)))
 
-    parser_pending = subparsers.add_parser(
-        "pending",
+    parser_list = subparsers.add_parser(
+        "list",
         help="List all workflows waiting for selection",
         description="Query and display all workflows with status WAITING_FOR_SELECTION",
     )
-    parser_pending.set_defaults(func=lambda args: asyncio.run(cmd_pending(args)))
+    parser_list.set_defaults(func=lambda args: asyncio.run(cmd_list(args)))
 
     parser_select = subparsers.add_parser(
         "select",
@@ -175,6 +220,31 @@ def main():
     )
     parser_worker.set_defaults(func=lambda args: asyncio.run(cmd_worker(args)))
 
+    parser_debug = subparsers.add_parser(
+        "debug",
+        help="Debug individual workflow steps",
+        description="Run individual workflow steps for debugging without executing the full workflow",
+    )
+    parser_debug.add_argument(
+        "step",
+        choices=[
+            "metadata",
+            "frames",
+            "rank",
+            "render",
+            "upload",
+            "set-thumbnail",
+            "update-visibility",
+            "cleanup",
+        ],
+        help="Step to execute",
+    )
+    parser_debug.add_argument(
+        "video_path",
+        help="Path to the video file",
+    )
+    parser_debug.set_defaults(func=cmd_debug)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -186,3 +256,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
