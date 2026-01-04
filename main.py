@@ -1,3 +1,4 @@
+from custom_exceptions import ThumbnailSelectionError
 import argparse
 import asyncio
 import sys
@@ -120,7 +121,7 @@ async def cmd_select(args):
 
             try:
                 await select_thumbnail_with_workflow(handle)
-            except Exception as e:
+            except ThumbnailSelectionError as e:
                 logger.error(f"Error processing workflow {workflow_id}: {e}")
                 continue
 
@@ -157,8 +158,7 @@ def cmd_debug(args):
 
     if step not in activities:
         logger.error(
-            f"Unknown step: {step}\n"
-            f"Available steps: {', '.join(activities.keys())}"
+            f"Unknown step: {step}\nAvailable steps: {', '.join(activities.keys())}"
         )
         sys.exit(1)
 
@@ -171,6 +171,7 @@ def cmd_debug(args):
     except Exception as e:
         logger.error(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
@@ -256,4 +257,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

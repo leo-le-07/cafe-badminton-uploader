@@ -12,3 +12,7 @@ class NoUploadedRecordError(Exception):
 
 class MissingThumbnailDataError(Exception):
     pass
+
+
+class ThumbnailSelectionError(Exception):
+    pass
