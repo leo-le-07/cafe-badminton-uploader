@@ -72,12 +72,7 @@ uv run main.py list
 ```
 Lists all workflows that are waiting for thumbnail selection.
 
-#### Select Thumbnails
-
-```bash
-uv run main.py select
-```
-Processes all workflows waiting for thumbnail selection interactively.
+**Note**: With the new web-based thumbnail selector, the browser opens automatically when a workflow reaches the selection stage. The `list` command is still available for monitoring purposes.
 
 #### Debug Individual Steps
 
@@ -87,10 +82,9 @@ uv run main.py debug <step> <video_path>
 
 Run individual workflow steps for debugging without executing the full workflow. Available steps:
 - `metadata` - Create and store video metadata
-- `frames` - Extract frame candidates
-- `rank` - Rank thumbnail candidates
-- `render` - Render final thumbnail
 - `upload` - Upload video to YouTube
+- `select-thumbnail` - Open web-based thumbnail selector (opens browser automatically)
+- `render` - Render final thumbnail
 - `set-thumbnail` - Set thumbnail for uploaded video
 - `update-visibility` - Update video visibility
 - `cleanup` - Move video to completed directory
@@ -100,3 +94,18 @@ Example:
 uv run main.py debug metadata input/md_HuyzVietvsThezLeo.mov
 ```
 
+### Web-Based Thumbnail Selection
+
+The thumbnail selection process uses a web-based UI that:
+- Opens automatically when a workflow reaches the selection stage
+- Provides a smooth horizontal timeline scrubber for frame navigation
+- Extracts frames client-side using HTML5 video and canvas (no server round-trips)
+- Allows precise frame selection by scrubbing through the entire video
+- Works with `.mov` and `.MOV` video files
+
+**Testing the thumbnail selector independently:**
+```bash
+uv run python -m web_selector.test_thumbnail_selector <video_path>
+```
+
+This allows you to test the thumbnail selector UI without running the full workflow.
