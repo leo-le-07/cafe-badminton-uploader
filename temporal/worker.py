@@ -2,10 +2,9 @@ from concurrent.futures import ThreadPoolExecutor
 from temporal.workflows import ProcessVideoWorkflow
 from temporal.activities import (
     create_metadata_activity,
-    create_frame_candidates_activity,
-    rank_candidates_activity,
     render_thumbnail_activity,
     upload_video_activity,
+    select_thumbnail_web_activity,
     set_thumbnail_activity,
     update_video_visibility_activity,
     cleanup_activity,
@@ -28,10 +27,9 @@ async def main():
             workflows=[ProcessVideoWorkflow],
             activities=[
                 create_metadata_activity,
-                create_frame_candidates_activity,
-                rank_candidates_activity,
                 render_thumbnail_activity,
                 upload_video_activity,
+                select_thumbnail_web_activity,
                 set_thumbnail_activity,
                 update_video_visibility_activity,
                 cleanup_activity,

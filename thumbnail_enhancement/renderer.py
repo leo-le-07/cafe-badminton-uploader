@@ -1,14 +1,15 @@
-import config
 from pathlib import Path
 
 from thumbnail_enhancement import template_a
 from thumbnail_enhancement import template_b
+
 TEMPLATES = {
     "template_a": template_a,
     "template_b": template_b,
 }
 
 DEFAULT_TEMPLATE = "template_b"
+
 
 def get_template_module(template_name: str):
     if template_name not in TEMPLATES:

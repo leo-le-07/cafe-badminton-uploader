@@ -18,10 +18,9 @@ from constants import (
 with workflow.unsafe.imports_passed_through():
     from temporal.activities import (
         create_metadata_activity,
-        create_frame_candidates_activity,
-        rank_candidates_activity,
         render_thumbnail_activity,
         upload_video_activity,
+        select_thumbnail_web_activity,
         set_thumbnail_activity,
         update_video_visibility_activity,
         cleanup_activity,
@@ -68,22 +67,13 @@ class ProcessVideoWorkflow:
             start_to_close_timeout=timedelta(minutes=120),
         )
 
-        self.stage = WORKFLOW_STAGE_EXTRACTING_FRAMES
-        await workflow.execute_activity(
-            create_frame_candidates_activity,
-            video_path,
-            start_to_close_timeout=timedelta(minutes=30),
-        )
-
-        self.stage = WORKFLOW_STAGE_RANKING_CANDIDATES
-        await workflow.execute_activity(
-            rank_candidates_activity,
-            video_path,
-            start_to_close_timeout=timedelta(minutes=30),
-        )
-
         self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
         workflow.logger.info(f"Waiting for thumbnail selection for {video_path}")
+        await workflow.execute_activity(
+            select_thumbnail_web_activity,
+            video_path,
+            start_to_close_timeout=timedelta(hours=24),
+        )
         await workflow.wait_condition(lambda: self.selected)
 
         self.stage = WORKFLOW_STAGE_ENHANCING_THUMBNAIL

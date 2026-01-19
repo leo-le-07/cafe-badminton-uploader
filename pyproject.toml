@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "clip",
+    "flask>=3.1.2",
     "freezegun>=1.5.5",
     "google-api-python-client>=2.187.0",
     "google-auth>=2.43.0",
@@ -17,6 +18,7 @@ dependencies = [
     "pillow>=12.0.0",
     "pytest>=9.0.2",
     "python-dotenv>=1.2.1",
+    "requests>=2.31.0",
     "temporalio>=1.21.1",
     "torch>=2.9.1",
     "torchvision>=0.24.1",

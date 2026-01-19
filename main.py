@@ -19,10 +19,9 @@ from auth_service import authenticate
 from temporal.worker import main as worker_main
 from temporal.activities import (
     create_metadata_activity,
-    create_frame_candidates_activity,
-    rank_candidates_activity,
     render_thumbnail_activity,
     upload_video_activity,
+    select_thumbnail_web_activity,
     set_thumbnail_activity,
     update_video_visibility_activity,
     cleanup_activity,
@@ -147,10 +146,9 @@ def cmd_debug(args):
 
     activities = {
         "metadata": create_metadata_activity,
-        "frames": create_frame_candidates_activity,
-        "rank": rank_candidates_activity,
         "render": render_thumbnail_activity,
         "upload": upload_video_activity,
+        "select-thumbnail": select_thumbnail_web_activity,
         "set-thumbnail": set_thumbnail_activity,
         "update-visibility": update_video_visibility_activity,
         "cleanup": cleanup_activity,
@@ -230,10 +228,9 @@ def main():
         "step",
         choices=[
             "metadata",
-            "frames",
-            "rank",
             "render",
             "upload",
+            "select-thumbnail",
             "set-thumbnail",
             "update-visibility",
             "cleanup",
