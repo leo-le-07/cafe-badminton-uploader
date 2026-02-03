@@ -20,7 +20,6 @@ with workflow.unsafe.imports_passed_through():
         create_metadata_activity,
         render_thumbnail_activity,
         upload_video_activity,
-        select_thumbnail_web_activity,
         set_thumbnail_activity,
         update_video_visibility_activity,
         cleanup_activity,
@@ -69,11 +68,6 @@ class ProcessVideoWorkflow:
 
         self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
         workflow.logger.info(f"Waiting for thumbnail selection for {video_path}")
-        await workflow.execute_activity(
-            select_thumbnail_web_activity,
-            video_path,
-            start_to_close_timeout=timedelta(hours=24),
-        )
         await workflow.wait_condition(lambda: self.selected)
 
         self.stage = WORKFLOW_STAGE_ENHANCING_THUMBNAIL

@@ -1,4 +1,3 @@
-"""Flask server for web-based thumbnail selection."""
 import base64
 import threading
 import webbrowser
@@ -16,8 +15,6 @@ logger = get_logger(__name__)
 
 
 class ThumbnailSelectorServer:
-    """Flask server for thumbnail selection UI."""
-
     def __init__(self, video_path: Path, port: int = 8765):
         self.video_path = video_path.resolve()
         self.port = port
@@ -31,11 +28,10 @@ class ThumbnailSelectorServer:
         self._setup_routes()
 
     def _setup_routes(self) -> None:
-        """Set up Flask routes."""
-
         @self.app.route("/")
         def index():
             from web_selector.templates import SELECT_HTML
+
             return render_template_string(SELECT_HTML)
 
         @self.app.route("/video")
@@ -83,12 +79,9 @@ class ThumbnailSelectorServer:
                 logger.error(f"Error processing selection: {e}")
                 return jsonify({"error": str(e)}), 500
 
-
     def start(self) -> None:
         """Start the Flask server in a separate thread."""
-        self.server_thread = threading.Thread(
-            target=self._run_server, daemon=False
-        )
+        self.server_thread = threading.Thread(target=self._run_server, daemon=False)
         self.server_thread.start()
 
         import time
@@ -121,7 +114,6 @@ class ThumbnailSelectorServer:
             raise
 
     def wait_for_selection(self, timeout: float = 3600.0) -> bytes:
-        """Wait for user selection with timeout."""
         if not self.selection_event.wait(timeout=timeout):
             raise ApplicationError(
                 "Thumbnail selection cancelled or timed out",
@@ -139,7 +131,6 @@ class ThumbnailSelectorServer:
         return self.selected_image_data
 
     def shutdown(self) -> None:
-        """Shutdown the Flask server."""
         self.shutdown_event.set()
 
         if self.server:
@@ -155,7 +146,6 @@ class ThumbnailSelectorServer:
 
 
 def save_selected_image(image_data: bytes, video_path: Path) -> None:
-    """Save selected image to file."""
     output_path = get_selected_candidate_path(video_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -165,10 +155,7 @@ def save_selected_image(image_data: bytes, video_path: Path) -> None:
     logger.info(f"Saved selected thumbnail to {output_path}")
 
 
-def select_thumbnail_web(
-    video_path: Path, port: int = 8765
-) -> None:
-    """Run web-based thumbnail selection activity."""
+def select_thumbnail_web(video_path: Path, port: int = 8765) -> None:
     server = None
     try:
         server = ThumbnailSelectorServer(video_path, port=port)

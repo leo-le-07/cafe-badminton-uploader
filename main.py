@@ -26,6 +26,10 @@ from temporal.activities import (
     update_video_visibility_activity,
     cleanup_activity,
 )
+from web_selector.server import select_thumbnail_web
+from pathlib import Path
+import config
+
 
 logger = get_logger(__name__)
 
@@ -113,14 +117,20 @@ async def cmd_select(args):
 
         logger.info(f"Processing {len(workflows)} workflow(s) for thumbnail selection")
 
-        from thumbnail_selector import select_thumbnail_with_workflow
-
         for i, (workflow_id, handle, video_path) in enumerate(workflows, start=1):
             logger.info(f"[{i}/{len(workflows)}] {video_path.name} ({workflow_id})")
 
             try:
-                await select_thumbnail_with_workflow(handle)
-            except ThumbnailSelectionError as e:
+                path = Path(video_path)
+                port = config.THUMBNAIL_SELECTOR_PORT
+
+                select_thumbnail_web(path, port=port)
+
+                await handle.signal("thumbnail_selected")
+                logger.info(
+                    f"Selected thumbnail saved and signal sent for {path.name}"
+                )
+            except Exception as e:
                 logger.error(f"Error processing workflow {workflow_id}: {e}")
                 continue
 
@@ -207,7 +217,7 @@ def main():
     parser_select = subparsers.add_parser(
         "select",
         help="Select thumbnails for all workflows waiting for selection",
-        description="Automatically get all workflows waiting for selection and process each one with thumbnail selector",
+        description="Process all workflows waiting for selection. Opens web-based thumbnail selector for each video one by one.",
     )
     parser_select.set_defaults(func=lambda args: asyncio.run(cmd_select(args)))
 
