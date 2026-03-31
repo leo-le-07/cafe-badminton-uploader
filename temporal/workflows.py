@@ -66,6 +66,13 @@ class ProcessVideoWorkflow:
             start_to_close_timeout=timedelta(minutes=120),
         )
 
+        self.stage = WORKFLOW_STAGE_UPDATING_VISIBILITY
+        await workflow.execute_activity(
+            update_video_visibility_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=5),
+        )
+
         self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
         workflow.logger.info(f"Waiting for thumbnail selection for {video_path}")
         await workflow.wait_condition(lambda: self.selected)
@@ -80,13 +87,6 @@ class ProcessVideoWorkflow:
         self.stage = WORKFLOW_STAGE_SETTING_THUMBNAIL
         await workflow.execute_activity(
             set_thumbnail_activity,
-            video_path,
-            start_to_close_timeout=timedelta(minutes=5),
-        )
-
-        self.stage = WORKFLOW_STAGE_UPDATING_VISIBILITY
-        await workflow.execute_activity(
-            update_video_visibility_activity,
             video_path,
             start_to_close_timeout=timedelta(minutes=5),
         )

@@ -1,4 +1,3 @@
-import constants
 from schemas import MatchMetadata, UploadedRecord
 from custom_exceptions import VideoAlreadyUploadedError
 from dataclasses import asdict
@@ -69,7 +68,7 @@ def upload(
                 "title": title,
             },
             "status": {
-                "privacyStatus": constants.VISIBILITY_PRIVATE,
+                "privacyStatus": config.VIDEO_PRIVACY_STATUS,
                 "selfDeclaredMadeForKids": False,
             },
         },
