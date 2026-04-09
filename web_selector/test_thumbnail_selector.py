@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Quick test script for web-based thumbnail selector."""
+
 import sys
 from pathlib import Path
 
@@ -7,7 +8,9 @@ from web_selector.server import select_thumbnail_web
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: uv run python -m web_selector.test_thumbnail_selector <video_path>")
+        print(
+            "Usage: uv run python -m web_selector.test_thumbnail_selector <video_path>"
+        )
         sys.exit(1)
 
     video_path = Path(sys.argv[1])

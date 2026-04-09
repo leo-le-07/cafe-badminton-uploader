@@ -36,4 +36,3 @@ if hasattr(logging, _log_level_str):
     _log_level = getattr(logging, _log_level_str)
 
 setup_logging(level=_log_level)
-

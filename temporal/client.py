@@ -8,6 +8,7 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
+
 @dataclass
 class VideoWorkflowOptions:
     video_path: str
@@ -29,7 +30,9 @@ def gen_workflow_id(video_path: Path) -> str:
 async def start_video_workflow(client: Client, options: VideoWorkflowOptions):
     workflow_id = gen_workflow_id(Path(options.video_path))
 
-    logger.info(f"Starting video workflow for {options.video_path} with ID {workflow_id}")
+    logger.info(
+        f"Starting video workflow for {options.video_path} with ID {workflow_id}"
+    )
     return await client.start_workflow(
         "ProcessVideoWorkflow",
         options.video_path,

@@ -1,4 +1,3 @@
-from custom_exceptions import ThumbnailSelectionError
 import argparse
 import asyncio
 import sys
@@ -27,8 +26,6 @@ from temporal.activities import (
     cleanup_activity,
 )
 from web_selector.server import select_thumbnail_web
-from pathlib import Path
-import config
 
 
 logger = get_logger(__name__)
@@ -127,9 +124,7 @@ async def cmd_select(args):
                 select_thumbnail_web(path, port=port)
 
                 await handle.signal("thumbnail_selected")
-                logger.info(
-                    f"Selected thumbnail saved and signal sent for {path.name}"
-                )
+                logger.info(f"Selected thumbnail saved and signal sent for {path.name}")
             except Exception as e:
                 logger.error(f"Error processing workflow {workflow_id}: {e}")
                 continue

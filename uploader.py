@@ -5,7 +5,6 @@ from googleapiclient.http import MediaFileUpload
 from auth_service import get_client
 import config
 from pathlib import Path
-from tqdm import tqdm
 from typing import Any, Callable
 from datetime import datetime
 import json

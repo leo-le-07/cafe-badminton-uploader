@@ -79,9 +79,7 @@ async def select_thumbnail_web_activity(video_path: str) -> None:
         workflow_handle = client.get_workflow_handle(workflow_id)
 
         await workflow_handle.signal("thumbnail_selected")
-        logger.info(
-            f"Selected thumbnail saved and signal sent for {path.name}"
-        )
+        logger.info(f"Selected thumbnail saved and signal sent for {path.name}")
     except TemporalApplicationError:
         raise
     except OSError as e:

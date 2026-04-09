@@ -26,10 +26,10 @@ def get_theme_for_tournament(tournament_name: str) -> str:
         return DEFAULT_THEME
 
     normalized = tournament_name.lower().strip()
-    
+
     if normalized.startswith("tour") or normalized.startswith("tournament"):
         return STYLE_PURPLE
-    
+
     return RECOGNIZED_TOURNAMENTS.get(normalized, DEFAULT_THEME)
 
 
@@ -96,4 +96,3 @@ def add_logo(img_pil: Image.Image, logo_path: Path) -> Image.Image:
     img_pil.paste(logo, (x, y), logo)
 
     return img_pil.convert("RGB")
-
