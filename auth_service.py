@@ -61,3 +61,8 @@ def get_client():
     credentials = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     youtube = build(API_SERVICE_NAME, API_VERSION, credentials=credentials)
     return youtube
+
+
+def validate_auth() -> None:
+    youtube = get_client()
+    youtube.channels().list(mine=True, part="id").execute()

@@ -14,7 +14,7 @@ from temporal.client import (
 from temporalio.client import WorkflowHandle
 from logger import get_logger
 from constants import WORKFLOW_STAGE_WAITING_FOR_SELECTION
-from auth_service import authenticate
+from auth_service import authenticate, validate_auth
 from temporal.worker import main as worker_main
 from temporal.activities import (
     create_metadata_activity,
@@ -32,6 +32,12 @@ logger = get_logger(__name__)
 
 
 async def cmd_start(args):
+    try:
+        validate_auth()
+    except Exception as e:
+        logger.error(f"YouTube authentication failed: {e}. Run 'uv run main.py auth' to re-authenticate.")
+        sys.exit(1)
+
     videos = list(utils.scan_videos(config.INPUT_DIR))
 
     if not videos:
