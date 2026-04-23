@@ -159,6 +159,23 @@ def create_and_store_metadata(video_path: str) -> MatchMetadata:
         raise CreateMetadataError(e)
 
 
+def score_frame(frame: np.ndarray, prev_frame: np.ndarray | None = None) -> dict:
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+    mean_brightness = float(np.mean(gray))
+    brightness = max(0.0, 1.0 - abs(mean_brightness - 128.0) / 128.0)
+
+    if prev_frame is not None:
+        prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+        motion = float(np.mean(np.abs(gray.astype(np.float32) - prev_gray.astype(np.float32))))
+    else:
+        motion = 0.0
+
+    return {"sharpness": sharpness, "brightness": brightness, "motion": motion}
+
+
 def create_frame_candidates(video_path: str) -> int:
     path = Path(video_path)
     candidate_dir = utils.get_candidate_dir(path)
@@ -175,7 +192,9 @@ def create_frame_candidates(video_path: str) -> int:
     try:
         total_stored = 0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frame_indices = calculate_frame_indices(total_frames, num_candidates)
+        start = int(total_frames * 0.1)
+        end = int(total_frames * 0.9)
+        frame_indices = calculate_frame_indices(end - start, num_candidates) + start
 
         candidate_dir.mkdir(parents=True, exist_ok=True)
 
@@ -187,10 +206,57 @@ def create_frame_candidates(video_path: str) -> int:
                 logger.warning(f"Could not read frame {frame_idx} from {path}")
                 continue
 
-            out_path = candidate_dir / f"frame_{frame_idx}.jpg"
+            out_path = candidate_dir / f"frame_{frame_idx:06d}.jpg"
             cv2.imwrite(str(out_path), frame)
             total_stored += 1
 
     finally:
         cap.release()
     return total_stored
+
+
+def auto_select_thumbnail(video_path: str) -> None:
+    path = Path(video_path)
+
+    create_frame_candidates(video_path)
+
+    candidate_dir = utils.get_candidate_dir(path)
+    candidate_paths = sorted(candidate_dir.glob("frame_*.jpg"))
+
+    if not candidate_paths:
+        raise ValueError(f"Could not extract any frames from {path}")
+
+    frames = []
+    raw_scores = []
+    prev_frame = None
+
+    for candidate_path in candidate_paths:
+        frame = cv2.imread(str(candidate_path))
+        if frame is None:
+            logger.warning(f"Could not read candidate {candidate_path.name}")
+            continue
+        raw_scores.append(score_frame(frame, prev_frame))
+        frames.append(frame)
+        prev_frame = frame
+
+    if not frames:
+        raise ValueError(f"Could not load any candidate frames for {path}")
+
+    sharpness_values = [s["sharpness"] for s in raw_scores]
+    motion_values = [s["motion"] for s in raw_scores]
+    max_sharpness = max(sharpness_values) or 1.0
+    max_motion = max(motion_values) or 1.0
+
+    composite_scores = [
+        0.4 * (s["sharpness"] / max_sharpness)
+        + 0.3 * s["brightness"]
+        + 0.3 * (s["motion"] / max_motion)
+        for s in raw_scores
+    ]
+
+    best_frame = frames[int(np.argmax(composite_scores))]
+
+    output_path = utils.get_selected_candidate_path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), best_frame)
+    logger.info(f"Auto-selected thumbnail saved to {output_path}")

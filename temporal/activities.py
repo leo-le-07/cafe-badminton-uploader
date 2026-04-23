@@ -2,7 +2,7 @@ from thumbnail_enhancement import render_thumbnail
 from schemas import MatchMetadata, UploadedRecord
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
-from video_prep import create_and_store_metadata
+from video_prep import create_and_store_metadata, auto_select_thumbnail
 from uploader import (
     upload_video_with_idempotency,
     set_thumbnail_for_video,
@@ -61,48 +61,5 @@ def cleanup_activity(video_path: str) -> str:
 
 
 @activity.defn
-async def select_thumbnail_web_activity(video_path: str) -> None:
-    from temporal.client import get_client
-    from web_selector.server import select_thumbnail_web
-    from temporalio.exceptions import ApplicationError as TemporalApplicationError
-
-    path = Path(video_path)
-    port = config.THUMBNAIL_SELECTOR_PORT
-
-    try:
-        select_thumbnail_web(path, port=port)
-
-        activity_info = activity.info()
-        workflow_id = activity_info.workflow_id
-
-        client = await get_client()
-        workflow_handle = client.get_workflow_handle(workflow_id)
-
-        await workflow_handle.signal("thumbnail_selected")
-        logger.info(f"Selected thumbnail saved and signal sent for {path.name}")
-    except TemporalApplicationError:
-        raise
-    except OSError as e:
-        if "Address already in use" in str(e):
-            logger.error(
-                f"Port {port} is already in use. "
-                f"Please close the conflicting process or set THUMBNAIL_SELECTOR_PORT to a different port."
-            )
-            raise ApplicationError(
-                f"Port {port} is already in use. "
-                f"Please close the conflicting process or set THUMBNAIL_SELECTOR_PORT to a different port.",
-                type="PortInUseError",
-                non_retryable=True,
-            ) from e
-        raise ApplicationError(
-            str(e),
-            type="ThumbnailSelectionError",
-            non_retryable=False,
-        ) from e
-    except Exception as e:
-        logger.error(f"Error in web thumbnail selection: {e}")
-        raise ApplicationError(
-            str(e),
-            type="ThumbnailSelectionError",
-            non_retryable=False,
-        ) from e
+def auto_select_thumbnail_activity(video_path: str) -> None:
+    auto_select_thumbnail(video_path)

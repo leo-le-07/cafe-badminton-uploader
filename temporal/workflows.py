@@ -4,8 +4,7 @@ from temporalio import workflow
 from constants import (
     WORKFLOW_STAGE_INITIALIZING,
     WORKFLOW_STAGE_CREATING_METADATA,
-    WORKFLOW_STAGE_WAITING_FOR_SELECTION,
-    WORKFLOW_STAGE_SELECTED,
+    WORKFLOW_STAGE_AUTO_SELECTING_THUMBNAIL,
     WORKFLOW_STAGE_ENHANCING_THUMBNAIL,
     WORKFLOW_STAGE_UPLOADING,
     WORKFLOW_STAGE_SETTING_THUMBNAIL,
@@ -21,20 +20,15 @@ with workflow.unsafe.imports_passed_through():
         set_thumbnail_activity,
         update_video_visibility_activity,
         cleanup_activity,
+        auto_select_thumbnail_activity,
     )
 
 
 @workflow.defn
 class ProcessVideoWorkflow:
     def __init__(self):
-        self.selected: bool = False
         self.stage: str = WORKFLOW_STAGE_INITIALIZING
         self.video_path: str = ""
-
-    @workflow.signal
-    def thumbnail_selected(self) -> None:
-        self.selected = True
-        self.stage = WORKFLOW_STAGE_SELECTED
 
     @workflow.query
     def get_stage(self) -> str:
@@ -71,9 +65,12 @@ class ProcessVideoWorkflow:
             start_to_close_timeout=timedelta(minutes=5),
         )
 
-        self.stage = WORKFLOW_STAGE_WAITING_FOR_SELECTION
-        workflow.logger.info(f"Waiting for thumbnail selection for {video_path}")
-        await workflow.wait_condition(lambda: self.selected)
+        self.stage = WORKFLOW_STAGE_AUTO_SELECTING_THUMBNAIL
+        await workflow.execute_activity(
+            auto_select_thumbnail_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=10),
+        )
 
         self.stage = WORKFLOW_STAGE_ENHANCING_THUMBNAIL
         await workflow.execute_activity(
