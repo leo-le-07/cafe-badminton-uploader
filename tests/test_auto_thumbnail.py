@@ -176,6 +176,21 @@ def test_auto_select_thumbnail_picks_sharpest_frame(mock_duration, mock_extract,
     assert np.mean(saved_frames[0]) > 50
 
 
+def test_auto_select_thumbnail_skips_if_selected_jpg_exists(tmp_path):
+    selected = tmp_path / "selected.jpg"
+    selected.write_bytes(b"existing")
+
+    video_path = tmp_path / "ms_LeovsKhanh.mov"
+    video_path.touch()
+
+    with patch("video_prep.utils.get_selected_candidate_path", return_value=selected):
+        with patch("video_prep._get_video_duration_seconds") as mock_duration:
+            auto_select_thumbnail(str(video_path))
+            mock_duration.assert_not_called()
+
+    assert selected.read_bytes() == b"existing"
+
+
 @patch("video_prep._extract_frame_at")
 @patch("video_prep._get_video_duration_seconds")
 def test_auto_select_thumbnail_raises_if_no_frames(mock_duration, mock_extract, tmp_path):

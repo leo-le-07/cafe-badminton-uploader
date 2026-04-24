@@ -24,7 +24,13 @@
 **Migration**: Remove calls to `create_frame_candidates`. Frame extraction is now internal to `auto_select_thumbnail`.
 
 ### Requirement: AUTO_SELECTING_THUMBNAIL workflow stage
-`ProcessVideoWorkflow` SHALL include an `AUTO_SELECTING_THUMBNAIL` stage that replaces `WAITING_FOR_SELECTION` and `SELECTED`.
+`ProcessVideoWorkflow` SHALL include an `AUTO_SELECTING_THUMBNAIL` stage that runs before `UPLOADING`, after `CREATING_METADATA`.
+
+#### Scenario: Thumbnail selection runs before upload
+- **WHEN** the workflow starts processing a video
+- **THEN** `auto_select_thumbnail_activity` executes after `create_metadata_activity`
+- **THEN** `auto_select_thumbnail_activity` completes before `upload_video_activity` starts
+- **THEN** `selected.jpg` exists in the workspace directory before upload begins
 
 #### Scenario: Workflow progresses automatically through thumbnail selection
 - **WHEN** the workflow reaches the thumbnail selection stage

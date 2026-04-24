@@ -37,12 +37,11 @@ uv run main.py select            # Open web UI for thumbnail selection
 The pipeline is orchestrated by **Temporal** (distributed workflow engine). Each video goes through a `ProcessVideoWorkflow` with these stages:
 
 ```
-INITIALIZING → CREATING_METADATA → UPLOADING → UPDATING_VISIBILITY
-→ WAITING_FOR_SELECTION  ← (pauses here, waits for signal)
-→ SELECTED → ENHANCING_THUMBNAIL → SETTING_THUMBNAIL → COMPLETED
+INITIALIZING → CREATING_METADATA → AUTO_SELECTING_THUMBNAIL → ENHANCING_THUMBNAIL
+→ UPLOADING → UPDATING_VISIBILITY → SETTING_THUMBNAIL → COMPLETED
 ```
 
-The workflow pauses at `WAITING_FOR_SELECTION` using Temporal's `wait_condition()`. The user runs `uv run main.py select`, which starts a Flask server. The user selects a thumbnail frame in the browser, which sends a `thumbnail_selected` signal to the workflow, allowing it to resume.
+Thumbnail selection and rendering happen before upload so that if upload fails and the workflow replays, those steps are skipped (idempotent: skip if output file already exists).
 
 **Key files:**
 - `main.py` — CLI entry point (commands: auth, start, list, select, worker, debug)

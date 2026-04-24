@@ -209,6 +209,12 @@ def _extract_frame_at(video_path: str, timestamp: float) -> np.ndarray | None:
 
 def auto_select_thumbnail(video_path: str) -> None:
     path = Path(video_path)
+
+    output_path = utils.get_selected_candidate_path(path)
+    if output_path.exists():
+        logger.info(f"Thumbnail already selected, skipping: {output_path}")
+        return
+
     num_candidates = config.CANDIDATE_THUMBNAIL_NUM
 
     duration = _get_video_duration_seconds(video_path)
@@ -246,7 +252,6 @@ def auto_select_thumbnail(video_path: str) -> None:
 
     best_frame = frames[int(np.argmax(composite_scores))]
 
-    output_path = utils.get_selected_candidate_path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(output_path), best_frame)
     logger.info(f"Auto-selected thumbnail saved to {output_path}")
