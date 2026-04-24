@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+import config
 import utils
 from logger import get_logger
 
@@ -181,33 +182,45 @@ def _run_ffmpeg_overlay(
     thanks_start: float,
     output_path: str,
     use_hardware: bool,
+    logo_path: str | None = None,
+    logo_size: int | None = None,
 ) -> subprocess.CompletedProcess:
     encoder_args = ["-c:v", "h264_videotoolbox"] if use_hardware else ["-c:v", "libx264", "-preset", "ultrafast"]
 
+    inputs = ["-i", video_path, "-i", cafe_png]
     if thanks_png:
-        filter_complex = (
+        inputs += ["-i", thanks_png]
+    if logo_path:
+        inputs += ["-i", logo_path]
+
+    logo_idx = (2 if not thanks_png else 3)
+
+    if thanks_png:
+        text_chain = (
             f"[0:v][1:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='lte(t,{OVERLAY_DURATION})'[v1];"
-            f"[v1][2:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='gte(t,{thanks_start:.3f})'[out]"
+            f"[v1][2:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='gte(t,{thanks_start:.3f})'[v2]"
         )
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-i", cafe_png,
-            "-i", thanks_png,
-            "-filter_complex", filter_complex,
-            "-map", "[out]", "-map", "0:a",
-        ] + encoder_args + ["-c:a", "copy", output_path]
     else:
-        filter_complex = (
-            f"[0:v][1:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='lte(t,{OVERLAY_DURATION})'[out]"
+        text_chain = (
+            f"[0:v][1:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='lte(t,{OVERLAY_DURATION})'[v2]"
         )
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-i", cafe_png,
-            "-filter_complex", filter_complex,
-            "-map", "[out]", "-map", "0:a",
-        ] + encoder_args + ["-c:a", "copy", output_path]
+
+    if logo_path and logo_size:
+        filter_complex = (
+            f"{text_chain};"
+            f"[{logo_idx}:v]scale={logo_size}:-1,format=rgba[logo];"
+            f"[v2][logo]overlay=x=main_w-overlay_w-20:y=20[out]"
+        )
+    else:
+        filter_complex = text_chain.replace("[v2]", "[out]")
+
+    cmd = (
+        ["ffmpeg", "-y"]
+        + inputs
+        + ["-filter_complex", filter_complex, "-map", "[out]", "-map", "0:a"]
+        + encoder_args
+        + ["-c:a", "copy", output_path]
+    )
 
     return subprocess.run(cmd, capture_output=True)
 
@@ -236,6 +249,11 @@ def add_video_overlays(video_path: str, output_path: str | None = None) -> str:
     thanks_img = render_thanks_overlay(width, height) if duration > 24 else None
     thanks_start = duration - OVERLAY_DURATION
 
+    logo_path = str(config.LOGO_PATH) if config.LOGO_PATH.exists() else None
+    logo_size = int(width * 0.1) if logo_path else None
+    if not logo_path:
+        logger.warning(f"Logo not found at {config.LOGO_PATH}, skipping watermark")
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         cafe_png = str(Path(tmp_dir) / "cafe_overlay.png")
         cafe_img.save(cafe_png)
@@ -245,11 +263,11 @@ def add_video_overlays(video_path: str, output_path: str | None = None) -> str:
             thanks_png = str(Path(tmp_dir) / "thanks_overlay.png")
             thanks_img.save(thanks_png)
 
-        result = _run_ffmpeg_overlay(video_path, cafe_png, thanks_png, thanks_start, str(resolved_output), use_hardware=True)
+        result = _run_ffmpeg_overlay(video_path, cafe_png, thanks_png, thanks_start, str(resolved_output), use_hardware=True, logo_path=logo_path, logo_size=logo_size)
 
         if result.returncode != 0:
             logger.warning("Hardware encoder failed, retrying with libx264...")
-            result = _run_ffmpeg_overlay(video_path, cafe_png, thanks_png, thanks_start, str(resolved_output), use_hardware=False)
+            result = _run_ffmpeg_overlay(video_path, cafe_png, thanks_png, thanks_start, str(resolved_output), use_hardware=False, logo_path=logo_path, logo_size=logo_size)
 
         if result.returncode != 0:
             raise RuntimeError(
