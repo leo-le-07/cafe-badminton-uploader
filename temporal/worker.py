@@ -8,6 +8,7 @@ from temporal.activities import (
     update_video_visibility_activity,
     cleanup_activity,
     auto_select_thumbnail_activity,
+    add_video_overlays_activity,
 )
 from temporal.client import get_client
 from constants import TEMPORAL_TASK_QUEUE
@@ -33,6 +34,7 @@ async def main():
                 update_video_visibility_activity,
                 cleanup_activity,
                 auto_select_thumbnail_activity,
+                add_video_overlays_activity,
             ],
             activity_executor=executor,
         )

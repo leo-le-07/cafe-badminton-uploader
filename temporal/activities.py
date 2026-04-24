@@ -3,6 +3,7 @@ from schemas import MatchMetadata, UploadedRecord
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 from video_prep import create_and_store_metadata, auto_select_thumbnail
+from video_overlay import add_video_overlays
 from uploader import (
     upload_video_with_idempotency,
     set_thumbnail_for_video,
@@ -63,3 +64,15 @@ def cleanup_activity(video_path: str) -> str:
 @activity.defn
 def auto_select_thumbnail_activity(video_path: str) -> None:
     auto_select_thumbnail(video_path)
+
+
+@activity.defn
+def add_video_overlays_activity(video_path: str) -> str:
+    try:
+        return add_video_overlays(video_path)
+    except FileNotFoundError as e:
+        raise ApplicationError(
+            str(e),
+            type="FontNotFoundError",
+            non_retryable=True,
+        )

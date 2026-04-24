@@ -14,6 +14,7 @@ from utils import (
     get_upload_record_path,
     get_uploaded_record,
     get_metadata_path,
+    get_processed_video_path,
 )
 
 CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
@@ -118,8 +119,11 @@ def upload_video_with_idempotency(
     if not metadata:
         raise ValueError("Metadata not found for video upload.")
 
+    processed_path = get_processed_video_path(path)
+    upload_path = processed_path if processed_path.exists() else path
+
     youtube_client = get_client()
-    video_id = upload(youtube_client, path, metadata, heartbeat_callback)
+    video_id = upload(youtube_client, upload_path, metadata, heartbeat_callback)
     save_upload_record(path, video_id, thumbnail_set=False)
 
     uploaded_record = get_uploaded_record(path)

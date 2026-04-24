@@ -22,6 +22,7 @@ from temporal.activities import (
     update_video_visibility_activity,
     cleanup_activity,
 )
+from video_overlay import add_video_overlays, render_cafe_game_overlay, render_thanks_overlay, get_video_dimensions
 
 
 logger = get_logger(__name__)
@@ -108,6 +109,29 @@ def cmd_debug(args):
         sys.exit(1)
 
 
+def cmd_test_overlay(args):
+    input_path = args.input_video
+    p = Path(input_path)
+    output_path = args.output or str(p.parent / f"{p.stem}_overlay.mov")
+
+    if not p.exists():
+        logger.error(f"Input video not found: {input_path}")
+        sys.exit(1)
+
+    logger.info(f"Applying overlays to {input_path} → {output_path}")
+    try:
+        result = add_video_overlays(input_path, output_path=output_path)
+        logger.info(f"Done: {result}")
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Temporal Workflow Manager - Start and manage video processing workflows",
@@ -162,6 +186,22 @@ def main():
         help="Path to the video file",
     )
     parser_debug.set_defaults(func=cmd_debug)
+
+    parser_test_overlay = subparsers.add_parser(
+        "test-overlay",
+        help="Apply video text overlays to a video file for visual testing",
+        description="Apply CAFE GAME and THANKS FOR WATCHING overlays to any video file without running the full Temporal workflow.",
+    )
+    parser_test_overlay.add_argument(
+        "input_video",
+        help="Path to the input video file",
+    )
+    parser_test_overlay.add_argument(
+        "--output",
+        default=None,
+        help="Output path for the processed video (default: same directory as input, with _overlay suffix)",
+    )
+    parser_test_overlay.set_defaults(func=cmd_test_overlay)
 
     args = parser.parse_args()
 

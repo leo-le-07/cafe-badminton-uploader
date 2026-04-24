@@ -6,6 +6,7 @@ from constants import (
     WORKFLOW_STAGE_CREATING_METADATA,
     WORKFLOW_STAGE_AUTO_SELECTING_THUMBNAIL,
     WORKFLOW_STAGE_ENHANCING_THUMBNAIL,
+    WORKFLOW_STAGE_ADDING_VIDEO_OVERLAYS,
     WORKFLOW_STAGE_UPLOADING,
     WORKFLOW_STAGE_SETTING_THUMBNAIL,
     WORKFLOW_STAGE_UPDATING_VISIBILITY,
@@ -21,6 +22,7 @@ with workflow.unsafe.imports_passed_through():
         update_video_visibility_activity,
         cleanup_activity,
         auto_select_thumbnail_activity,
+        add_video_overlays_activity,
     )
 
 
@@ -63,6 +65,13 @@ class ProcessVideoWorkflow:
             render_thumbnail_activity,
             video_path,
             start_to_close_timeout=timedelta(minutes=10),
+        )
+
+        self.stage = WORKFLOW_STAGE_ADDING_VIDEO_OVERLAYS
+        await workflow.execute_activity(
+            add_video_overlays_activity,
+            video_path,
+            start_to_close_timeout=timedelta(minutes=60),
         )
 
         self.stage = WORKFLOW_STAGE_UPLOADING

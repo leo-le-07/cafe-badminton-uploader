@@ -9,6 +9,7 @@ TOP_RANKED_CANDIDATES_DIR = "top_candidates"
 METADATA_FILE = "metadata.json"
 SELECTED_CANDIDATE_NAME = "selected.jpg"
 RENDERED_THUMBNAIL_NAME = "thumbnail.jpg"
+PROCESSED_VIDEO_NAME = "processed.mov"
 UPLOADED_FILE = "upload.json"
 SUPPORTED_VIDEO_EXTENSIONS = {".mov", ".MOV"}
 
@@ -43,6 +44,10 @@ def get_selected_candidate_path(video_path: Path) -> Path:
 
 def get_thumbnail_path(video_path: Path) -> Path:
     return get_workspace_dir(video_path) / RENDERED_THUMBNAIL_NAME
+
+
+def get_processed_video_path(video_path: Path) -> Path:
+    return get_workspace_dir(video_path) / PROCESSED_VIDEO_NAME
 
 
 def get_metadata(video_path: Path) -> MatchMetadata:
