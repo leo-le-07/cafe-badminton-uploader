@@ -4,12 +4,13 @@ A CLI tool to batch process and upload badminton match videos to YouTube with au
 
 ## Setup
 
-1. Install dependencies: `uv sync`
-2. Create environment files:
+1. Install system dependencies: `brew install ffmpeg` (required for thumbnail extraction)
+2. Install Python dependencies: `uv sync`
+3. Create environment files:
    - Copy `env.template` to `.env.dev` for development
    - Copy `env.template` to `.env.production` for production
    - Adjust values in each file
-3. Place `client_secret.json` (YouTube API credentials) in root
+4. Place `client_secret.json` (YouTube API credentials) in root
 
 ## Video filename format
 
@@ -65,15 +66,6 @@ uv run main.py start
 ```
 Scans the input directory and starts a workflow for each video found. All workflows will be processed concurrently by the worker.
 
-#### List Pending Workflows
-
-```bash
-uv run main.py list
-```
-Lists all workflows that are waiting for thumbnail selection.
-
-**Note**: With the new web-based thumbnail selector, the browser opens automatically when a workflow reaches the selection stage. The `list` command is still available for monitoring purposes.
-
 #### Debug Individual Steps
 
 ```bash
@@ -83,7 +75,7 @@ uv run main.py debug <step> <video_path>
 Run individual workflow steps for debugging without executing the full workflow. Available steps:
 - `metadata` - Create and store video metadata
 - `upload` - Upload video to YouTube
-- `select-thumbnail` - Open web-based thumbnail selector (opens browser automatically)
+- `auto-select-thumbnail` - Auto-select the best thumbnail frame using FFmpeg
 - `render` - Render final thumbnail
 - `set-thumbnail` - Set thumbnail for uploaded video
 - `update-visibility` - Update video visibility
@@ -94,18 +86,3 @@ Example:
 uv run main.py debug metadata input/md_HuyzVietvsThezLeo.mov
 ```
 
-### Web-Based Thumbnail Selection
-
-The thumbnail selection process uses a web-based UI that:
-- Opens automatically when a workflow reaches the selection stage
-- Provides a smooth horizontal timeline scrubber for frame navigation
-- Extracts frames client-side using HTML5 video and canvas (no server round-trips)
-- Allows precise frame selection by scrubbing through the entire video
-- Works with `.mov` and `.MOV` video files
-
-**Testing the thumbnail selector independently:**
-```bash
-uv run python -m web_selector.test_thumbnail_selector <video_path>
-```
-
-This allows you to test the thumbnail selector UI without running the full workflow.

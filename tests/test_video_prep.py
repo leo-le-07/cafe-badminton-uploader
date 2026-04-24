@@ -1,7 +1,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch
-import numpy as np
 
 from video_prep import (
     create_title,
@@ -9,7 +8,6 @@ from video_prep import (
     parse_filename,
     _create_tag,
     create_description,
-    calculate_frame_indices,
     create_metadata,
 )
 
@@ -145,25 +143,6 @@ def test_create_description(tournament, match_type, team1, team2, match_date_str
     assert match_type in result
     assert "vs" in result
 
-
-@pytest.mark.parametrize(
-    "total_frames, num_candidates, expected",
-    [
-        (100, 5, [0, 24, 49, 74, 99]),
-        (1000, 10, [0, 111, 222, 333, 444, 555, 666, 777, 888, 999]),
-        (50, 3, [0, 24, 49]),
-        (10, 2, [0, 9]),
-    ],
-)
-def test_calculate_frame_indices(total_frames, num_candidates, expected):
-    result = calculate_frame_indices(total_frames, num_candidates)
-    assert isinstance(result, np.ndarray)
-    assert list(result) == expected
-
-
-def test_calculate_frame_indices_invalid():
-    with pytest.raises(ValueError, match="at least one frame"):
-        calculate_frame_indices(-1, 5)
 
 
 @patch("video_prep.datetime")

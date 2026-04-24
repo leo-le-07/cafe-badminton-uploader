@@ -1,10 +1,17 @@
+import json
+import subprocess
 import cv2
 import numpy as np
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from video_prep import score_frame, auto_select_thumbnail
+from video_prep import (
+    score_frame,
+    _get_video_duration_seconds,
+    _extract_frame_at,
+    auto_select_thumbnail,
+)
 
 
 def make_frame(value: int) -> np.ndarray:
@@ -16,6 +23,11 @@ def make_checkerboard() -> np.ndarray:
     frame[::2, ::2] = 255
     frame[1::2, 1::2] = 255
     return frame
+
+
+def encode_jpeg(frame: np.ndarray) -> bytes:
+    _, buf = cv2.imencode(".jpg", frame)
+    return buf.tobytes()
 
 
 # --- score_frame tests ---
@@ -58,38 +70,93 @@ def test_score_frame_no_motion_identical_frames():
     assert scores["motion"] == 0.0
 
 
+# --- _get_video_duration_seconds tests ---
+
+@patch("video_prep.subprocess.run")
+def test_get_video_duration_seconds_returns_float(mock_run):
+    payload = json.dumps({"format": {"duration": "923.456"}}).encode()
+    mock_run.return_value = MagicMock(stdout=payload, returncode=0)
+
+    result = _get_video_duration_seconds("video.mov")
+
+    assert result == pytest.approx(923.456)
+    args = mock_run.call_args[0][0]
+    assert "ffprobe" in args
+    assert "video.mov" in args
+
+
+@patch("video_prep.subprocess.run")
+def test_get_video_duration_seconds_raises_on_failure(mock_run):
+    mock_run.side_effect = subprocess.CalledProcessError(1, "ffprobe")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        _get_video_duration_seconds("video.mov")
+
+
+# --- _extract_frame_at tests ---
+
+@patch("video_prep.subprocess.run")
+def test_extract_frame_at_returns_frame(mock_run):
+    jpeg_bytes = encode_jpeg(make_frame(128))
+    mock_run.return_value = MagicMock(stdout=jpeg_bytes, returncode=0)
+
+    result = _extract_frame_at("video.mov", 10.5)
+
+    assert result is not None
+    assert result.shape == (100, 100, 3)
+    args = mock_run.call_args[0][0]
+    assert "ffmpeg" in args
+    assert "-ss" in args
+    assert "10.500" in args
+
+
+@patch("video_prep.subprocess.run")
+def test_extract_frame_at_returns_none_on_ffmpeg_failure(mock_run):
+    mock_run.return_value = MagicMock(stdout=b"", returncode=1)
+
+    result = _extract_frame_at("video.mov", 10.5)
+
+    assert result is None
+
+
+@patch("video_prep.subprocess.run")
+def test_extract_frame_at_uses_fast_seeking(mock_run):
+    jpeg_bytes = encode_jpeg(make_frame(64))
+    mock_run.return_value = MagicMock(stdout=jpeg_bytes, returncode=0)
+
+    _extract_frame_at("video.mov", 30.0)
+
+    args = mock_run.call_args[0][0]
+    ss_index = args.index("-ss")
+    i_index = args.index("-i")
+    assert ss_index < i_index, "-ss must appear before -i for fast input seeking"
+
+
 # --- auto_select_thumbnail tests ---
 
-def write_candidate(candidate_dir: Path, name: str, frame: np.ndarray) -> None:
-    candidate_dir.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(candidate_dir / name), frame)
-
-
-@patch("video_prep.create_frame_candidates")
-def test_auto_select_thumbnail_saves_to_correct_path(mock_create, tmp_path):
-    candidate_dir = tmp_path / "candidates"
-    sharp_frame = make_checkerboard()
-    write_candidate(candidate_dir, "frame_000010.jpg", sharp_frame)
+@patch("video_prep._extract_frame_at")
+@patch("video_prep._get_video_duration_seconds")
+def test_auto_select_thumbnail_saves_to_correct_path(mock_duration, mock_extract, tmp_path):
+    mock_duration.return_value = 100.0
+    mock_extract.return_value = make_checkerboard()
 
     video_path = tmp_path / "ms_LeovsKhanh.mov"
     video_path.touch()
-
     expected_output = tmp_path / "selected.jpg"
-    with patch("video_prep.utils.get_candidate_dir", return_value=candidate_dir):
-        with patch("video_prep.utils.get_selected_candidate_path", return_value=expected_output):
-            auto_select_thumbnail(str(video_path))
+
+    with patch("video_prep.utils.get_selected_candidate_path", return_value=expected_output):
+        auto_select_thumbnail(str(video_path))
 
     assert expected_output.exists()
-    mock_create.assert_called_once_with(str(video_path))
 
 
-@patch("video_prep.create_frame_candidates")
-def test_auto_select_thumbnail_picks_sharpest_frame(mock_create, tmp_path):
-    candidate_dir = tmp_path / "candidates"
+@patch("video_prep._extract_frame_at")
+@patch("video_prep._get_video_duration_seconds")
+def test_auto_select_thumbnail_picks_sharpest_frame(mock_duration, mock_extract, tmp_path):
+    mock_duration.return_value = 100.0
     sharp_frame = make_checkerboard()
     dark_frame = make_frame(5)
-    write_candidate(candidate_dir, "frame_000010.jpg", sharp_frame)
-    write_candidate(candidate_dir, "frame_000020.jpg", dark_frame)
+    mock_extract.side_effect = [dark_frame, sharp_frame]
 
     video_path = tmp_path / "ms_LeovsKhanh.mov"
     video_path.touch()
@@ -100,25 +167,25 @@ def test_auto_select_thumbnail_picks_sharpest_frame(mock_create, tmp_path):
         saved_frames.append(frame.copy())
         return True
 
-    with patch("video_prep.utils.get_candidate_dir", return_value=candidate_dir):
-        with patch("video_prep.utils.get_selected_candidate_path", return_value=tmp_path / "selected.jpg"):
-            with patch("video_prep.cv2.imwrite", side_effect=fake_imwrite):
+    with patch("video_prep.utils.get_selected_candidate_path", return_value=tmp_path / "selected.jpg"):
+        with patch("video_prep.cv2.imwrite", side_effect=fake_imwrite):
+            with patch("video_prep.config.CANDIDATE_THUMBNAIL_NUM", 2):
                 auto_select_thumbnail(str(video_path))
 
     assert len(saved_frames) == 1
-    # sharp checkerboard (~128 mean) should be chosen over dark frame (5 mean)
     assert np.mean(saved_frames[0]) > 50
 
 
-@patch("video_prep.create_frame_candidates")
-def test_auto_select_thumbnail_raises_if_no_frames(mock_create, tmp_path):
-    candidate_dir = tmp_path / "candidates"
-    candidate_dir.mkdir()
+@patch("video_prep._extract_frame_at")
+@patch("video_prep._get_video_duration_seconds")
+def test_auto_select_thumbnail_raises_if_no_frames(mock_duration, mock_extract, tmp_path):
+    mock_duration.return_value = 100.0
+    mock_extract.return_value = None
 
     video_path = tmp_path / "ms_LeovsKhanh.mov"
     video_path.touch()
 
-    with patch("video_prep.utils.get_candidate_dir", return_value=candidate_dir):
-        with patch("video_prep.utils.get_selected_candidate_path", return_value=tmp_path / "selected.jpg"):
+    with patch("video_prep.utils.get_selected_candidate_path", return_value=tmp_path / "selected.jpg"):
+        with patch("video_prep.config.CANDIDATE_THUMBNAIL_NUM", 3):
             with pytest.raises(ValueError, match="Could not extract"):
                 auto_select_thumbnail(str(video_path))

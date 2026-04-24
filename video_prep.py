@@ -6,9 +6,9 @@ from dataclasses import asdict
 
 import config
 import json
+import subprocess
 import cv2
 import numpy as np
-import shutil
 import constants
 import utils
 from logger import get_logger
@@ -108,12 +108,6 @@ def create_description(
     return description
 
 
-def calculate_frame_indices(total_frames: int, num_candidates: int) -> np.ndarray:
-    if total_frames < 0:
-        raise ValueError("Video must have at least one frame")
-    return np.linspace(0, total_frames - 1, num_candidates, dtype=int)
-
-
 def create_metadata(video_path: Path) -> MatchMetadata:
     video_stem = video_path.stem
     current_date = datetime.now().strftime("%Y-%m-%d")
@@ -176,71 +170,67 @@ def score_frame(frame: np.ndarray, prev_frame: np.ndarray | None = None) -> dict
     return {"sharpness": sharpness, "brightness": brightness, "motion": motion}
 
 
-def create_frame_candidates(video_path: str) -> int:
-    path = Path(video_path)
-    candidate_dir = utils.get_candidate_dir(path)
-    num_candidates = config.CANDIDATE_THUMBNAIL_NUM
+def _get_video_duration_seconds(video_path: str) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            video_path,
+        ],
+        capture_output=True,
+        check=True,
+    )
+    info = json.loads(result.stdout)
+    return float(info["format"]["duration"])
 
-    if candidate_dir.exists():
-        shutil.rmtree(candidate_dir)
 
-    cap = cv2.VideoCapture(str(path.resolve()))
-
-    if not cap.isOpened():
-        raise IOError(f"Error opening video file: {path}")
-
-    try:
-        total_stored = 0
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        start = int(total_frames * 0.1)
-        end = int(total_frames * 0.9)
-        frame_indices = calculate_frame_indices(end - start, num_candidates) + start
-
-        candidate_dir.mkdir(parents=True, exist_ok=True)
-
-        for i, frame_idx in enumerate(frame_indices):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-
-            if not ret:
-                logger.warning(f"Could not read frame {frame_idx} from {path}")
-                continue
-
-            out_path = candidate_dir / f"frame_{frame_idx:06d}.jpg"
-            cv2.imwrite(str(out_path), frame)
-            total_stored += 1
-
-    finally:
-        cap.release()
-    return total_stored
+def _extract_frame_at(video_path: str, timestamp: float) -> np.ndarray | None:
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-ss", f"{timestamp:.3f}",
+            "-i", video_path,
+            "-vframes", "1",
+            "-f", "image2",
+            "-vcodec", "mjpeg",
+            "-q:v", "2",
+            "-loglevel", "error",
+            "pipe:1",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0 or not result.stdout:
+        return None
+    buf = np.frombuffer(result.stdout, dtype=np.uint8)
+    return cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
 
 def auto_select_thumbnail(video_path: str) -> None:
     path = Path(video_path)
+    num_candidates = config.CANDIDATE_THUMBNAIL_NUM
 
-    create_frame_candidates(video_path)
-
-    candidate_dir = utils.get_candidate_dir(path)
-    candidate_paths = sorted(candidate_dir.glob("frame_*.jpg"))
-
-    if not candidate_paths:
-        raise ValueError(f"Could not extract any frames from {path}")
+    duration = _get_video_duration_seconds(video_path)
+    start = duration * 0.1
+    end = duration * 0.9
+    timestamps = np.linspace(start, end, num_candidates)
 
     frames = []
     raw_scores = []
     prev_frame = None
 
-    for candidate_path in candidate_paths:
-        frame = cv2.imread(str(candidate_path))
+    for timestamp in timestamps:
+        frame = _extract_frame_at(video_path, timestamp)
         if frame is None:
-            logger.warning(f"Could not read candidate {candidate_path.name}")
+            logger.warning(f"Could not extract frame at {timestamp:.2f}s from {path}")
             continue
         raw_scores.append(score_frame(frame, prev_frame))
         frames.append(frame)
         prev_frame = frame
 
     if not frames:
-        raise ValueError(f"Could not load any candidate frames for {path}")
+        raise ValueError(f"Could not extract any frames from {path}")
 
     sharpness_values = [s["sharpness"] for s in raw_scores]
     motion_values = [s["motion"] for s in raw_scores]

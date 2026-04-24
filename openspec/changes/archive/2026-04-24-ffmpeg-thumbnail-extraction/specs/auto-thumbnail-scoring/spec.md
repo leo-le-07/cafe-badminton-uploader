@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Frame scoring for thumbnail selection
 `video_prep` SHALL expose an `auto_select_thumbnail(video_path)` function that uses FFmpeg subprocess calls to extract candidate frames directly into memory, scores each frame, and saves the highest-scoring frame as the selected thumbnail. No intermediate JPEG files are written to the candidates directory.
 
@@ -19,26 +21,8 @@
 - **WHEN** `auto_select_thumbnail()` is called
 - **THEN** only frames from the middle 80% of the video (skipping first and last 10%) are considered
 
-### ~~Requirement: `create_frame_candidates` disk extraction~~ (REMOVED)
+## REMOVED Requirements
+
+### Requirement: `create_frame_candidates` disk extraction
 **Reason**: The function wrote candidate frames to disk solely to support the now-removed web-based human selector. With auto-selection running in-memory via FFmpeg, disk-based extraction has no consumers and adds unnecessary I/O latency.
 **Migration**: Remove calls to `create_frame_candidates`. Frame extraction is now internal to `auto_select_thumbnail`.
-
-### Requirement: AUTO_SELECTING_THUMBNAIL workflow stage
-`ProcessVideoWorkflow` SHALL include an `AUTO_SELECTING_THUMBNAIL` stage that replaces `WAITING_FOR_SELECTION` and `SELECTED`.
-
-#### Scenario: Workflow progresses automatically through thumbnail selection
-- **WHEN** the workflow reaches the thumbnail selection stage
-- **THEN** `auto_select_thumbnail_activity` runs without any human signal or wait condition
-- **THEN** the workflow advances to `ENHANCING_THUMBNAIL` immediately after the activity completes
-
-#### Scenario: No blocking on human input
-- **WHEN** multiple videos are being processed simultaneously
-- **THEN** all workflows proceed through thumbnail selection without waiting for human interaction
-
-### Requirement: Removal of human selection commands
-The `list` and `select` CLI commands SHALL be removed as no workflows block waiting for human thumbnail selection.
-
-#### Scenario: Pipeline runs end-to-end without human input
-- **WHEN** `uv run main.py start` is executed
-- **THEN** each video is processed fully automatically from upload to thumbnail set
-- **THEN** no manual intervention is required at any stage
