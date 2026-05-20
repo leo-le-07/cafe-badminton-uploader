@@ -1,5 +1,4 @@
 from schemas import MatchMetadata, UploadedRecord
-import config
 from pathlib import Path
 from collections.abc import Iterator
 import json
@@ -35,7 +34,7 @@ def scan_videos(input_path: Path) -> Iterator[Path]:
 
 
 def get_workspace_dir(video_path: Path) -> Path:
-    return config.INPUT_DIR / video_path.stem
+    return video_path.parent / video_path.stem
 
 
 def get_candidate_dir(video_path: Path) -> Path:

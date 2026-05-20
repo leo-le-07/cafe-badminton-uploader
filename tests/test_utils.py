@@ -87,9 +87,16 @@ class TestSupportedImageExtensions:
 
 
 class TestPathHelpers:
-    def test_get_workspace_dir(self, patched_input):
+    def test_get_workspace_dir(self, patched_input, tmp_path):
+        # Existing behaviour: video under INPUT_DIR → workspace under INPUT_DIR
         video = patched_input / "ms_LeovsKhanh.mov"
         assert get_workspace_dir(video) == patched_input / "ms_LeovsKhanh"
+
+        # New behaviour: video under any directory → workspace under same directory
+        other_dir = tmp_path / "completed"
+        other_dir.mkdir()
+        video2 = other_dir / "ms_LeovsKhanh.mov"
+        assert get_workspace_dir(video2) == other_dir / "ms_LeovsKhanh"
 
     def test_get_candidate_dir(self, patched_input):
         video = patched_input / "ms_LeovsKhanh.mov"
