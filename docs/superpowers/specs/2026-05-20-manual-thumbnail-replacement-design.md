@@ -39,7 +39,7 @@ Contains all logic extracted from `main.py` for testability:
 ```python
 def find_manual_thumbnail(workspace_dir: Path) -> Path:
     """Scan workspace for newest non-reserved image file."""
-    RESERVED = {"thumbnail.jpg", "selected.jpg"}
+    RESERVED = {SELECTED_CANDIDATE_NAME, RENDERED_THUMBNAIL_NAME}  # from utils.py
     candidates = [
         f for f in workspace_dir.iterdir()
         if f.suffix.lower() in {".jpg", ".jpeg", ".png"}
