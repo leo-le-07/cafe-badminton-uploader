@@ -6,6 +6,7 @@ import pytest
 import config
 from schemas import MatchMetadata, UploadedRecord
 from utils import (
+    SUPPORTED_IMAGE_EXTENSIONS,
     get_candidate_dir,
     get_metadata,
     get_metadata_path,
@@ -62,6 +63,27 @@ class TestScanVideos:
 
     def test_empty_directory_returns_empty(self, tmp_path):
         assert list(scan_videos(tmp_path)) == []
+
+
+class TestSupportedImageExtensions:
+    def test_contains_common_image_formats(self):
+        for ext in [
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".bmp",
+            ".tiff",
+            ".tif",
+            ".gif",
+            ".heic",
+            ".heif",
+        ]:
+            assert ext in SUPPORTED_IMAGE_EXTENSIONS
+
+    def test_does_not_contain_video_extensions(self):
+        assert ".mov" not in SUPPORTED_IMAGE_EXTENSIONS
+        assert ".mp4" not in SUPPORTED_IMAGE_EXTENSIONS
 
 
 class TestPathHelpers:

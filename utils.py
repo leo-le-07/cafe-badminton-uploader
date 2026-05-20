@@ -12,6 +12,18 @@ RENDERED_THUMBNAIL_NAME = "thumbnail.jpg"
 PROCESSED_VIDEO_NAME = "processed.mov"
 UPLOADED_FILE = "upload.json"
 SUPPORTED_VIDEO_EXTENSIONS = {".mov", ".MOV"}
+SUPPORTED_IMAGE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".bmp",
+    ".tiff",
+    ".tif",
+    ".gif",
+    ".heic",
+    ".heif",
+}
 
 
 def scan_videos(input_path: Path) -> Iterator[Path]:
