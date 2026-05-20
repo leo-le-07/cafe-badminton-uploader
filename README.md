@@ -26,6 +26,14 @@ Examples:
 - `md_NhozVinhvsKhanhzLeo.MOV`
 - `xd_KhanhzVyvsZezTram_Friendly Game.mov`
 
+## Testing
+
+```bash
+uv run pytest                                        # Run all tests
+uv run pytest --cov=. --cov-report=term-missing -q  # Coverage summary with missing lines
+uv run pytest --cov=. --cov-report=html && open htmlcov/index.html  # HTML coverage report
+```
+
 ## Usage
 
 ### Prerequisites
