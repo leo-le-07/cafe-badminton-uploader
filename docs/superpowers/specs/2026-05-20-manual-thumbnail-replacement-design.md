@@ -32,6 +32,14 @@ uv run main.py rethumbnail <workspace>
 
 ## Code Changes
 
+### `utils.py`
+
+Add alongside the existing `SUPPORTED_VIDEO_EXTENSIONS`:
+
+```python
+SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif", ".gif", ".heic", ".heif"}
+```
+
 ### New file: `rethumbnail.py`
 
 Contains all logic extracted from `main.py` for testability:
@@ -42,7 +50,7 @@ def find_manual_thumbnail(workspace_dir: Path) -> Path:
     RESERVED = {SELECTED_CANDIDATE_NAME, RENDERED_THUMBNAIL_NAME}  # from utils.py
     candidates = [
         f for f in workspace_dir.iterdir()
-        if f.suffix.lower() in {".jpg", ".jpeg", ".png"}
+        if f.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS  # from utils.py
         and f.name not in RESERVED
     ]
     if not candidates:
