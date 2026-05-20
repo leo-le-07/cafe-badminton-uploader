@@ -11,6 +11,22 @@ After a video completes the full upload pipeline and is moved to `COMPLETED_DIR`
 
 A new `rethumbnail` CLI command that detects a manually dropped image in the completed workspace, renders it through the existing template pipeline, and sets it as the YouTube thumbnail.
 
+## Background: Workspace Structure
+
+Each video has a workspace folder named after the video stem. After the pipeline completes, both the video and its workspace are moved to `COMPLETED_DIR`:
+
+```
+COMPLETED_DIR/
+  xd_Nhut JPzVyvsDungzPhong.mov        ← video file
+  xd_Nhut JPzVyvsDungzPhong/           ← workspace (drop manual image here)
+    metadata.json
+    selected.jpg
+    thumbnail.jpg
+    upload.json
+```
+
+The `rethumbnail` command always operates on completed videos, so the workspace is always inside `COMPLETED_DIR`.
+
 ## Command Interface
 
 ```
@@ -19,11 +35,11 @@ uv run main.py rethumbnail <workspace>
 
 `<workspace>` is either:
 - A bare folder name (e.g., `"xd_Nhut JPzVyvsDungzPhong"`) — resolved against `COMPLETED_DIR`
-- A full path to the workspace directory
+- A full path to the workspace directory inside `COMPLETED_DIR`
 
 ## Flow
 
-1. **Resolve workspace** — find the workspace directory in `COMPLETED_DIR`
+1. **Resolve workspace** — find the workspace directory inside `COMPLETED_DIR`
 2. **Detect image** — scan workspace for `.jpg`/`.png` files excluding `thumbnail.jpg` and `selected.jpg`; pick the most recently modified; error if none found
 3. **Replace `selected.jpg`** — copy detected image to `{workspace}/selected.jpg` (overwrite)
 4. **Clear `thumbnail.jpg`** — delete existing render so the renderer does not skip
