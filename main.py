@@ -22,7 +22,10 @@ from temporal.activities import (
     update_video_visibility_activity,
     cleanup_activity,
 )
-from video_overlay import add_video_overlays, render_cafe_game_overlay, render_thanks_overlay, get_video_dimensions
+from video_overlay import (
+    add_video_overlays,
+)
+from rethumbnail import rethumbnail_video
 
 
 logger = get_logger(__name__)
@@ -32,7 +35,9 @@ async def cmd_start(args):
     try:
         validate_auth()
     except Exception as e:
-        logger.error(f"YouTube authentication failed: {e}. Run 'uv run main.py auth' to re-authenticate.")
+        logger.error(
+            f"YouTube authentication failed: {e}. Run 'uv run main.py auth' to re-authenticate."
+        )
         sys.exit(1)
 
     videos = list(utils.scan_videos(config.INPUT_DIR))
@@ -128,7 +133,27 @@ def cmd_test_overlay(args):
     except Exception as e:
         logger.error(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
+        sys.exit(1)
+
+
+def cmd_rethumbnail(args):
+    workspace_arg = args.workspace
+    workspace_dir = Path(workspace_arg)
+    if not workspace_dir.is_absolute():
+        workspace_dir = config.COMPLETED_DIR / workspace_arg
+    if not workspace_dir.exists() or not workspace_dir.is_dir():
+        logger.error(f"Workspace not found: {workspace_dir}")
+        sys.exit(1)
+    try:
+        rethumbnail_video(workspace_dir)
+        logger.info(f"Thumbnail updated successfully for {workspace_dir.name}")
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    except RuntimeError as e:
+        logger.error(str(e))
         sys.exit(1)
 
 
@@ -202,6 +227,20 @@ def main():
         help="Output path for the processed video (default: same directory as input, with _overlay suffix)",
     )
     parser_test_overlay.set_defaults(func=cmd_test_overlay)
+
+    parser_rethumbnail = subparsers.add_parser(
+        "rethumbnail",
+        help="Re-render and re-set thumbnail for a completed video",
+        description=(
+            "Detects a manually dropped image in the completed workspace, "
+            "re-renders it through the thumbnail template, and sets it on YouTube."
+        ),
+    )
+    parser_rethumbnail.add_argument(
+        "workspace",
+        help="Workspace folder name (e.g. 'xd_Nhut JPzVyvsDungzPhong') or full path inside COMPLETED_DIR",
+    )
+    parser_rethumbnail.set_defaults(func=cmd_rethumbnail)
 
     args = parser.parse_args()
 
