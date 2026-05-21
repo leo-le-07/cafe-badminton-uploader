@@ -1,9 +1,14 @@
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rethumbnail import find_manual_thumbnail, rethumbnail_video
+from rethumbnail import (
+    find_manual_thumbnail,
+    rethumbnail_video,
+    scan_completed_workspaces,
+)
 from schemas import UploadedRecord
 from utils import RENDERED_THUMBNAIL_NAME, SELECTED_CANDIDATE_NAME
 
@@ -182,3 +187,72 @@ class TestRethumbnailVideo:
         with patch("rethumbnail.get_uploaded_record", return_value=record_no_id):
             with pytest.raises(RuntimeError, match="No upload record"):
                 rethumbnail_video(workspace_dir)
+
+    def test_deletes_manual_image_after_success(self, tmp_path):
+        workspace_dir, manual_img = self._setup_workspace(tmp_path)
+
+        with (
+            patch("rethumbnail.get_uploaded_record", return_value=_RECORD),
+            patch(
+                "rethumbnail.render_thumbnail",
+                return_value=str(workspace_dir / RENDERED_THUMBNAIL_NAME),
+            ),
+            patch("rethumbnail.get_client", return_value=MagicMock()),
+            patch("rethumbnail.set_thumbnail"),
+            patch("rethumbnail.save_upload_record"),
+        ):
+            rethumbnail_video(workspace_dir)
+
+        assert not manual_img.exists()
+
+
+class TestScanCompletedWorkspaces:
+    def _make_workspace(
+        self,
+        parent: Path,
+        name: str,
+        has_upload_record: bool = True,
+        has_manual_image: bool = True,
+    ) -> Path:
+        import json
+        from dataclasses import asdict
+
+        ws = parent / name
+        ws.mkdir()
+        if has_upload_record:
+            record = UploadedRecord(
+                video_id=f"vid_{name}",
+                uploaded_at="2026-01-01T00:00:00",
+                thumbnail_set=True,
+                youtube_link=f"https://youtu.be/vid_{name}",
+            )
+            (ws / "upload.json").write_text(json.dumps(asdict(record)))
+        if has_manual_image:
+            (ws / "manual.jpg").write_bytes(b"img")
+        return ws
+
+    def test_returns_empty_when_no_workspaces(self, tmp_path):
+        assert scan_completed_workspaces(tmp_path) == []
+
+    def test_returns_workspace_with_upload_record_and_manual_image(self, tmp_path):
+        ws = self._make_workspace(tmp_path, "xd_match")
+        result = scan_completed_workspaces(tmp_path)
+        assert result == [ws]
+
+    def test_skips_workspace_without_upload_record(self, tmp_path):
+        self._make_workspace(tmp_path, "xd_match", has_upload_record=False)
+        assert scan_completed_workspaces(tmp_path) == []
+
+    def test_skips_workspace_without_manual_image(self, tmp_path):
+        self._make_workspace(tmp_path, "xd_match", has_manual_image=False)
+        assert scan_completed_workspaces(tmp_path) == []
+
+    def test_skips_files_not_directories(self, tmp_path):
+        (tmp_path / "not_a_dir.mov").write_bytes(b"video")
+        assert scan_completed_workspaces(tmp_path) == []
+
+    def test_returns_multiple_workspaces(self, tmp_path):
+        ws1 = self._make_workspace(tmp_path, "aaa_match")
+        ws2 = self._make_workspace(tmp_path, "bbb_match")
+        result = scan_completed_workspaces(tmp_path)
+        assert ws1 in result and ws2 in result

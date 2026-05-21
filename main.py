@@ -26,7 +26,7 @@ from video_overlay import (
     add_video_overlays,
 )
 from custom_exceptions import MissingThumbnailDataError
-from rethumbnail import rethumbnail_video
+from rethumbnail import rethumbnail_video, scan_completed_workspaces
 
 
 logger = get_logger(__name__)
@@ -140,25 +140,20 @@ def cmd_test_overlay(args):
 
 
 def cmd_rethumbnail(args):
-    workspace_arg = args.workspace
-    workspace_dir = Path(workspace_arg)
-    if not workspace_dir.is_absolute():
-        workspace_dir = config.COMPLETED_DIR / workspace_arg
-    if not workspace_dir.exists() or not workspace_dir.is_dir():
-        logger.error(f"Workspace not found: {workspace_dir}")
-        sys.exit(1)
-    try:
-        rethumbnail_video(workspace_dir)
-        logger.info(f"Thumbnail updated successfully for {workspace_dir.name}")
-    except FileNotFoundError as e:
-        logger.error(str(e))
-        sys.exit(1)
-    except RuntimeError as e:
-        logger.error(str(e))
-        sys.exit(1)
-    except MissingThumbnailDataError as e:
-        logger.error(str(e))
-        sys.exit(1)
+    workspaces = scan_completed_workspaces(config.COMPLETED_DIR)
+    if not workspaces:
+        logger.info("No workspaces with manual thumbnails found in COMPLETED_DIR")
+        return
+    for workspace_dir in workspaces:
+        try:
+            rethumbnail_video(workspace_dir)
+            logger.info(f"Thumbnail updated successfully for {workspace_dir.name}")
+        except FileNotFoundError as e:
+            logger.error(f"{workspace_dir.name}: {e}")
+        except RuntimeError as e:
+            logger.error(f"{workspace_dir.name}: {e}")
+        except MissingThumbnailDataError as e:
+            logger.error(f"{workspace_dir.name}: {e}")
 
 
 def main():
@@ -234,15 +229,12 @@ def main():
 
     parser_rethumbnail = subparsers.add_parser(
         "rethumbnail",
-        help="Re-render and re-set thumbnail for a completed video",
+        help="Re-render and re-set thumbnails for all completed videos with a manual image",
         description=(
-            "Detects a manually dropped image in the completed workspace, "
-            "re-renders it through the thumbnail template, and sets it on YouTube."
+            "Scans COMPLETED_DIR for workspace folders containing a manually dropped image. "
+            "For each one found, re-renders via the thumbnail template and sets it on YouTube. "
+            "The manual image is deleted after successful processing."
         ),
-    )
-    parser_rethumbnail.add_argument(
-        "workspace",
-        help="Workspace folder name (e.g. 'xd_Nhut JPzVyvsDungzPhong') or full path inside COMPLETED_DIR",
     )
     parser_rethumbnail.set_defaults(func=cmd_rethumbnail)
 

@@ -17,67 +17,51 @@ def test_cmd_start_exits_on_auth_failure(mock_start_workflow, mock_validate_auth
 
 
 class TestCmdRethumbnail:
-    def test_calls_rethumbnail_video_with_resolved_workspace(
-        self, tmp_path, monkeypatch
-    ):
+    def test_calls_rethumbnail_video_for_each_workspace(self, tmp_path, monkeypatch):
         monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path)
-        workspace_dir = tmp_path / "xd_match"
-        workspace_dir.mkdir()
+        workspaces = [tmp_path / "ws1", tmp_path / "ws2"]
 
-        with patch("main.rethumbnail_video") as mock_fn:
-            from main import cmd_rethumbnail
-
-            args = type("args", (), {"workspace": "xd_match"})()
-            cmd_rethumbnail(args)
-
-        mock_fn.assert_called_once_with(workspace_dir)
-
-    def test_accepts_absolute_path(self, tmp_path):
-        workspace_dir = tmp_path / "xd_match"
-        workspace_dir.mkdir()
-
-        with patch("main.rethumbnail_video") as mock_fn:
-            from main import cmd_rethumbnail
-
-            args = type("args", (), {"workspace": str(workspace_dir)})()
-            cmd_rethumbnail(args)
-
-        mock_fn.assert_called_once_with(workspace_dir)
-
-    def test_exits_when_workspace_not_found(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path)
-
-        from main import cmd_rethumbnail
-
-        args = type("args", (), {"workspace": "nonexistent"})()
-        with pytest.raises(SystemExit) as exc:
-            cmd_rethumbnail(args)
-        assert exc.value.code != 0
-
-    def test_exits_on_file_not_found_error(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path)
-        workspace_dir = tmp_path / "xd_match"
-        workspace_dir.mkdir()
-
-        with patch("main.rethumbnail_video", side_effect=FileNotFoundError("no image")):
-            from main import cmd_rethumbnail
-
-            args = type("args", (), {"workspace": "xd_match"})()
-            with pytest.raises(SystemExit) as exc:
-                cmd_rethumbnail(args)
-            assert exc.value.code != 0
-
-    def test_exits_on_runtime_error(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path)
-        workspace_dir = tmp_path / "xd_match"
-        workspace_dir.mkdir()
-
-        with patch(
-            "main.rethumbnail_video", side_effect=RuntimeError("no upload record")
+        with (
+            patch(
+                "main.scan_completed_workspaces", return_value=workspaces
+            ) as mock_scan,
+            patch("main.rethumbnail_video") as mock_fn,
         ):
             from main import cmd_rethumbnail
 
-            args = type("args", (), {"workspace": "xd_match"})()
-            with pytest.raises(SystemExit) as exc:
-                cmd_rethumbnail(args)
-            assert exc.value.code != 0
+            cmd_rethumbnail(object())
+
+        mock_scan.assert_called_once_with(config.COMPLETED_DIR)
+        assert mock_fn.call_count == 2
+
+    def test_does_nothing_when_no_workspaces_found(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path)
+
+        with (
+            patch("main.scan_completed_workspaces", return_value=[]),
+            patch("main.rethumbnail_video") as mock_fn,
+        ):
+            from main import cmd_rethumbnail
+
+            cmd_rethumbnail(object())
+
+        mock_fn.assert_not_called()
+
+    def test_continues_on_error_for_one_workspace(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path)
+        ws1 = tmp_path / "ws1"
+        ws2 = tmp_path / "ws2"
+
+        def side_effect(ws):
+            if ws == ws1:
+                raise FileNotFoundError("no image")
+
+        with (
+            patch("main.scan_completed_workspaces", return_value=[ws1, ws2]),
+            patch("main.rethumbnail_video", side_effect=side_effect) as mock_fn,
+        ):
+            from main import cmd_rethumbnail
+
+            cmd_rethumbnail(object())
+
+        assert mock_fn.call_count == 2

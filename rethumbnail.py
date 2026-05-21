@@ -26,6 +26,23 @@ def find_manual_thumbnail(workspace_dir: Path) -> Path:
     return max(candidates, key=lambda f: f.stat().st_mtime)
 
 
+def scan_completed_workspaces(completed_dir: Path) -> list[Path]:
+    results = []
+    for item in sorted(completed_dir.iterdir()):
+        if not item.is_dir():
+            continue
+        fake_video_path = item.parent / f"{item.name}.mov"
+        record = get_uploaded_record(fake_video_path)
+        if not record or not record.video_id:
+            continue
+        try:
+            find_manual_thumbnail(item)
+            results.append(item)
+        except FileNotFoundError:
+            continue
+    return results
+
+
 def rethumbnail_video(workspace_dir: Path) -> None:
     fake_video_path = workspace_dir.parent / f"{workspace_dir.name}.mov"
 
@@ -48,3 +65,4 @@ def rethumbnail_video(workspace_dir: Path) -> None:
     youtube_client = get_client()
     set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)
     save_upload_record(fake_video_path, upload_record.video_id, thumbnail_set=True)
+    manual_image.unlink()
