@@ -38,12 +38,12 @@ def rethumbnail_video(workspace_dir: Path) -> None:
     manual_image = find_manual_thumbnail(workspace_dir)
 
     selected_path = workspace_dir / SELECTED_CANDIDATE_NAME
-    shutil.copy2(str(manual_image), str(selected_path))
+    shutil.copy2(manual_image, selected_path)
 
     thumbnail_path = workspace_dir / RENDERED_THUMBNAIL_NAME
     thumbnail_path.unlink(missing_ok=True)
 
-    render_thumbnail(str(fake_video_path))
+    render_thumbnail(str(fake_video_path), template_name="template_b")
 
     youtube_client = get_client()
     set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)

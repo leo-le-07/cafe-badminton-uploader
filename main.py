@@ -25,6 +25,7 @@ from temporal.activities import (
 from video_overlay import (
     add_video_overlays,
 )
+from custom_exceptions import MissingThumbnailDataError
 from rethumbnail import rethumbnail_video
 
 
@@ -153,6 +154,9 @@ def cmd_rethumbnail(args):
         logger.error(str(e))
         sys.exit(1)
     except RuntimeError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    except MissingThumbnailDataError as e:
         logger.error(str(e))
         sys.exit(1)
 

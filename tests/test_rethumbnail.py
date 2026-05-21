@@ -1,8 +1,11 @@
 import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rethumbnail import find_manual_thumbnail
+from rethumbnail import find_manual_thumbnail, rethumbnail_video
+from schemas import UploadedRecord
+from utils import RENDERED_THUMBNAIL_NAME, SELECTED_CANDIDATE_NAME
 
 
 class TestFindManualThumbnail:
@@ -61,13 +64,6 @@ class TestFindManualThumbnail:
         with pytest.raises(FileNotFoundError):
             find_manual_thumbnail(tmp_path)
 
-
-from unittest.mock import MagicMock, patch
-
-from schemas import UploadedRecord
-from utils import RENDERED_THUMBNAIL_NAME, SELECTED_CANDIDATE_NAME
-
-from rethumbnail import rethumbnail_video
 
 _RECORD = UploadedRecord(
     video_id="abc123",
