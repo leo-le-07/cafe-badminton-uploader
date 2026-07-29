@@ -1,3 +1,4 @@
+from googleapiclient.errors import HttpError
 from thumbnail_enhancement import render_thumbnail
 from schemas import MatchMetadata, UploadedRecord
 from temporalio import activity
@@ -12,8 +13,6 @@ from uploader import (
 from custom_exceptions import VideoAlreadyUploadedError
 from cleanup import cleanup_video
 from logger import get_logger
-from pathlib import Path
-import config
 
 logger = get_logger(__name__)
 
@@ -44,6 +43,14 @@ def upload_video_activity(video_path: str) -> UploadedRecord:
             type="VideoAlreadyUploadedError",
             non_retryable=True,
         )
+    except HttpError as e:
+        if e.resp.status == 429:
+            raise ApplicationError(
+                f"YouTube daily upload quota exceeded. Will retry after quota resets: {e}",
+                type="YouTubeQuotaExceededError",
+                non_retryable=False,
+            )
+        raise
 
 
 @activity.defn

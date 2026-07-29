@@ -33,3 +33,13 @@ dev = [
 
 [tool.uv.sources]
 clip = { git = "https://github.com/openai/CLIP.git" }
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+# Pin the rule selection explicitly so it can't silently change across ruff
+# upgrades. This mirrors ruff's current defaults. The `F` group is pyflakes,
+# which includes F821 (undefined name) — the check that catches missing imports
+# at edit time via the PostToolUse hook in .claude/settings.json.
+select = ["E4", "E7", "E9", "F"]

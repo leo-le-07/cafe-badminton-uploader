@@ -1,5 +1,6 @@
 from datetime import timedelta
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 from constants import (
     WORKFLOW_STAGE_INITIALIZING,
@@ -79,6 +80,9 @@ class ProcessVideoWorkflow:
             upload_video_activity,
             video_path,
             start_to_close_timeout=timedelta(minutes=120),
+            retry_policy=RetryPolicy(
+                maximum_interval=timedelta(hours=4),
+            ),
         )
 
         self.stage = WORKFLOW_STAGE_UPDATING_VISIBILITY
