@@ -10,7 +10,7 @@ SELECTED_CANDIDATE_NAME = "selected.jpg"
 RENDERED_THUMBNAIL_NAME = "thumbnail.jpg"
 PROCESSED_VIDEO_NAME = "processed.mov"
 UPLOADED_FILE = "upload.json"
-SUPPORTED_VIDEO_EXTENSIONS = {".mov", ".MOV"}
+SUPPORTED_VIDEO_EXTENSIONS = {".mov", ".mp4"}
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".jpg",
     ".jpeg",
@@ -29,7 +29,7 @@ def scan_videos(input_path: Path) -> Iterator[Path]:
     return (
         video
         for video in input_path.iterdir()
-        if video.is_file() and video.suffix in SUPPORTED_VIDEO_EXTENSIONS
+        if video.is_file() and video.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
     )
 
 

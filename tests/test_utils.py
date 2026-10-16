@@ -45,15 +45,15 @@ def patched_input(tmp_path, monkeypatch):
 
 
 class TestScanVideos:
-    def test_returns_only_mov_files(self, tmp_path):
+    def test_returns_only_video_files(self, tmp_path):
         (tmp_path / "match1.mov").touch()
         (tmp_path / "match2.MOV").touch()
         (tmp_path / "match3.mp4").touch()
         (tmp_path / "notes.txt").touch()
         results = list(scan_videos(tmp_path))
         suffixes = {p.suffix for p in results}
-        assert suffixes == {".mov", ".MOV"}
-        assert len(results) == 2
+        assert suffixes == {".mov", ".MOV", ".mp4"}
+        assert len(results) == 3
 
     def test_ignores_directories(self, tmp_path):
         (tmp_path / "subdir").mkdir()
