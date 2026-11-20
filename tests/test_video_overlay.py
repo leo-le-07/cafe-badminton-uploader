@@ -131,6 +131,11 @@ def test_segments_are_converted_to_given_fps():
     assert fc.count("fps=29.97002997") == 2
 
 
+def test_banner_is_hidden():
+    cmd = build_render_command([_inp()], "c.png", None, 0, None, None, "o.mov", True)
+    assert "-hide_banner" in cmd
+
+
 def test_encoder_choice():
     hw = build_render_command([_inp()], "c.png", None, 0, None, None, "o.mov", True)
     sw = build_render_command([_inp()], "c.png", None, 0, None, None, "o.mov", False)

@@ -254,6 +254,42 @@ def test_ffmpeg_failure_leaves_no_partial_file(sources, tmp_path, monkeypatch):
     assert list(out_dir.iterdir()) == []
 
 
+def test_ffmpeg_error_keeps_only_the_tail_of_stderr(sources, tmp_path, monkeypatch):
+    stderr = "\n".join(f"line {i}" for i in range(100))
+    monkeypatch.setattr(video_overlay, "_run_ffmpeg", lambda *a: (1, stderr))
+    with pytest.raises(RuntimeError) as raised:
+        render_match([Segment("a.mov", 0, 2)], sources, tmp_path / "processed.mov")
+    message = str(raised.value)
+    assert "line 99" in message and "line 85" in message
+    assert "line 84" not in message and "line 0\n" not in message
+
+
+def test_stale_partials_are_removed_and_partial_name_is_per_process(
+    sources, tmp_path, monkeypatch
+):
+    import os
+
+    out = tmp_path / "processed.mov"
+    (tmp_path / "processed.mov.partial").write_bytes(b"old layout")
+    (tmp_path / "processed.mov.12345.partial").write_bytes(b"orphan")
+    (tmp_path / "other.mov.1.partial").write_bytes(b"not ours")
+    real_run = video_overlay._run_ffmpeg
+    targets = []
+
+    def recording(cmd, total_duration, progress):
+        targets.append(cmd[-1])
+        return real_run(cmd, total_duration, progress)
+
+    monkeypatch.setattr(video_overlay, "_run_ffmpeg", recording)
+    render_match([Segment("a.mov", 0, 1)], sources, out)
+
+    assert all(f".{os.getpid()}." in Path(t).name for t in targets)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "other.mov.1.partial",
+        "processed.mov",
+    ]
+
+
 def test_hardware_failure_falls_back_to_libx264(sources, tmp_path, monkeypatch):
     real_run = video_overlay._run_ffmpeg
     encoders: list[str] = []

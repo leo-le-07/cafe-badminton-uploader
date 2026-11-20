@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -17,6 +18,7 @@ logger = get_logger(__name__)
 FONT_PATH = Path("assets/Anton-Regular.ttf")
 OVERLAY_DURATION = 12
 DEFAULT_FPS = 30.0
+STDERR_TAIL_LINES = 15
 
 COLOR_YELLOW = (255, 215, 0, 255)
 COLOR_WHITE = (255, 255, 255, 255)
@@ -262,7 +264,7 @@ def build_render_command(
         last = "ov3"
 
     return (
-        ["ffmpeg", "-y", "-nostats", "-progress", "pipe:1"]
+        ["ffmpeg", "-hide_banner", "-y", "-nostats", "-progress", "pipe:1"]
         + args
         + ["-filter_complex", ";".join(chains), "-map", f"[{last}]", "-map", "[aout]"]
         + encoder_args
@@ -333,7 +335,11 @@ def render_match(
         logger.warning(f"Logo not found at {config.LOGO_PATH}, skipping watermark")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    partial = output_path.with_name(output_path.name + ".partial")
+    # A partial left by an earlier process (killed, or an orphaned ffmpeg
+    # still writing to it) is never reused: this process writes its own.
+    for stale in output_path.parent.glob(f"{output_path.name}*.partial"):
+        stale.unlink(missing_ok=True)
+    partial = output_path.with_name(f"{output_path.name}.{os.getpid()}.partial")
 
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -355,7 +361,8 @@ def render_match(
                 if use_hardware:
                     logger.warning("Hardware encoder failed, retrying with libx264...")
             else:
-                raise RuntimeError(f"FFmpeg failed with code {returncode}:\n{stderr}")
+                tail = "\n".join(stderr.strip().splitlines()[-STDERR_TAIL_LINES:])
+                raise RuntimeError(f"FFmpeg failed with code {returncode}:\n{tail}")
 
         partial.replace(output_path)
     finally:
