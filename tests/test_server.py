@@ -199,7 +199,18 @@ def test_media_refuses_anything_outside_input_dir(client, source, dirs, name):
 
 def test_bootstrap_shape(client):
     body = client.get("/api/bootstrap").json
-    assert set(body) == {"auth", "defaults", "sources", "session", "jobs", "players"}
+    assert set(body) == {
+        "auth",
+        "defaults",
+        "mode",
+        "modes",
+        "sources",
+        "session",
+        "jobs",
+        "players",
+    }
+    assert body["mode"] == "dev"
+    assert body["modes"] == {"dev": "private", "production": "public"}
     assert body["defaults"] == {"tournament": config.DEFAULT_TOURNAMENT}
     assert body["session"] == {
         "sources": [],
@@ -896,6 +907,7 @@ def test_login_can_be_retried_after_a_failure(client, fake_login):
     "method, path",
     [
         ("put", "/api/session"),
+        ("put", "/api/mode"),
         ("post", "/api/jobs"),
         ("post", "/api/jobs/m1/retry"),
         ("post", "/api/jobs/m1/unqueue"),
@@ -958,3 +970,36 @@ def test_unexpected_error_answers_vietnamese_json(queue, monkeypatch):
     r = app.test_client().get("/api/jobs")
     assert r.status_code == 500
     assert "Lỗi máy chủ" in r.json["errors"][0]
+
+
+# ---- mode ----------------------------------------------------------------------
+
+
+def test_put_mode_stores_it(client):
+    r = client.put("/api/mode", json={"mode": "production"})
+    assert r.status_code == 200 and r.json == {"mode": "production"}
+    assert client.get("/api/bootstrap").json["mode"] == "production"
+    assert store.load_mode() == "production"
+
+
+@pytest.mark.parametrize("body", [{"mode": "prod"}, {"mode": ["dev"]}, {}, None, []])
+def test_put_mode_refuses_an_unknown_mode(client, body):
+    r = client.put("/api/mode", json=body)
+    assert r.status_code == 400
+    assert r.json["errors"] == ["Chế độ không hợp lệ"]
+    assert store.load_mode() == "dev"
+
+
+def test_put_mode_needs_the_editor_header(bare_client):
+    assert bare_client.put("/api/mode", json={"mode": "production"}).status_code == 403
+    assert store.load_mode() == "dev"
+
+
+def test_changing_mode_does_not_change_queued_jobs(client, source, signed_in):
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
+
+    client.put("/api/mode", json={"mode": "production"})
+
+    assert store.load_job("m1").mode == "dev"
+    assert client.get("/api/jobs").json[0]["mode"] == "dev"

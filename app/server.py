@@ -386,6 +386,8 @@ def create_app(queue: JobQueue) -> Flask:
         return jsonify(
             auth=auth_payload(),
             defaults={"tournament": config.DEFAULT_TOURNAMENT},
+            mode=store.load_mode(),
+            modes=config.MODES,
             sources=list_sources(session, queue),
             session=session.to_dict(),
             jobs=visible_jobs(session),
@@ -409,6 +411,15 @@ def create_app(queue: JobQueue) -> Flask:
             _check_content(new, old, locked)
             revision = _save_next(new, old)
         return jsonify(ok=True, revision=revision)
+
+    @app.put("/api/mode")
+    def put_mode():
+        body = request.get_json(silent=True)
+        mode = body.get("mode") if isinstance(body, dict) else None
+        if not isinstance(mode, str) or mode not in config.MODES:
+            raise ApiError(400, ["Chế độ không hợp lệ"])
+        store.save_mode(mode)
+        return jsonify(mode=mode)
 
     @app.get("/api/jobs")
     def jobs():

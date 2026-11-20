@@ -8,10 +8,12 @@ from app.store import (
     delete_workspace,
     list_jobs,
     load_job,
+    load_mode,
     load_players,
     load_session,
     record_players,
     save_job,
+    save_mode,
     save_session,
     seed_players_from_completed,
     workspace_dir,
@@ -203,3 +205,30 @@ def test_list_archived_jobs_without_completed_dir(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path / "missing")
     assert list_archived_jobs() == []
+
+
+def test_mode_defaults_to_dev_when_nothing_is_stored():
+    assert load_mode() == "dev"
+
+
+def test_mode_round_trips(data_dir):
+    save_mode("production")
+    assert load_mode() == "production"
+    assert json.loads((data_dir / "mode.json").read_text()) == {"mode": "production"}
+
+
+@pytest.mark.parametrize(
+    "content", ['{"mode": "x"}', "[]", '{"mode": 3}', '{"mode": ["dev"]}', "not json"]
+)
+def test_unusable_mode_file_falls_back_to_dev_and_is_kept(data_dir, content):
+    path = data_dir / "mode.json"
+    path.write_text(content)
+    assert load_mode() == "dev"
+    assert not path.exists()
+    assert len(list(data_dir.glob("mode.json.corrupt-*"))) == 1
+
+
+def test_save_mode_refuses_an_unknown_mode(data_dir):
+    with pytest.raises(ValueError):
+        save_mode("prod")
+    assert not (data_dir / "mode.json").exists()

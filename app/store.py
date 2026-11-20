@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 SESSION_FILE = "session.json"
 PLAYERS_FILE = "players.json"
 JOB_FILE = "job.json"
+MODE_FILE = "mode.json"
 WORKSPACES_DIR = "workspaces"
 
 _players_lock = threading.Lock()
@@ -65,6 +66,22 @@ def load_session() -> Session:
 
 def save_session(s: Session) -> None:
     _write_json(config.DATA_DIR / SESSION_FILE, s.to_dict())
+
+
+def _parse_mode(data) -> str:
+    mode = data.get("mode") if isinstance(data, dict) else None
+    if not isinstance(mode, str) or mode not in config.MODES:
+        raise ValueError(f"unknown mode: {mode!r}")
+    return mode
+
+
+def load_mode() -> str:
+    """The mode last chosen in the editor; "dev" if none is stored or usable."""
+    return _load(config.DATA_DIR / MODE_FILE, _parse_mode) or config.DEFAULT_MODE
+
+
+def save_mode(mode: str) -> None:
+    _write_json(config.DATA_DIR / MODE_FILE, {"mode": _parse_mode({"mode": mode})})
 
 
 def workspace_dir(match_id: str) -> Path:
