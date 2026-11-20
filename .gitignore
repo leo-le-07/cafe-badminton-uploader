@@ -37,6 +37,7 @@ dump.rdb
 
 input/
 completed/
+data/
 
 # --- Superpowers brainstorm scratch ---
 .superpowers/

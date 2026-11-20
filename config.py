@@ -42,12 +42,15 @@ COMPLETED_DIR = get_env_path("COMPLETED_DIR", create_if_missing=True)
 
 CANDIDATE_THUMBNAIL_NUM = int(os.getenv("CANDIDATE_THUMBNAIL_NUM", 10))
 
-TOP_RANKED_CANDIDATES_NUM = int(os.getenv("TOP_RANKED_CANDIDATES_NUM", 5))
-
 VIDEO_PRIVACY_STATUS = os.getenv("VIDEO_PRIVACY_STATUS", "private")
 
-TEMPORAL_SERVER_ADDRESS = os.environ["TEMPORAL_SERVER_ADDRESS"]
-
-THUMBNAIL_SELECTOR_PORT = int(os.getenv("THUMBNAIL_SELECTOR_PORT", 8765))
-
 LOGO_PATH = Path(os.getenv("LOGO_PATH", "assets/logo.png"))
+
+DATA_DIR = Path(os.getenv("DATA_DIR") or "./data").resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+APP_PORT = int(os.getenv("APP_PORT") or 8765)
+
+DEFAULT_TOURNAMENT = "Cafe Game"
+
+QUOTA_RETRY_HOURS = int(os.getenv("QUOTA_RETRY_HOURS") or 4)

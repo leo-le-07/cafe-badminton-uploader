@@ -3,8 +3,6 @@ from pathlib import Path
 from collections.abc import Iterator
 import json
 
-CANDIDATES_DIR = "candidates"
-TOP_RANKED_CANDIDATES_DIR = "top_candidates"
 METADATA_FILE = "metadata.json"
 SELECTED_CANDIDATE_NAME = "selected.jpg"
 RENDERED_THUMBNAIL_NAME = "thumbnail.jpg"
@@ -37,12 +35,8 @@ def get_workspace_dir(video_path: Path) -> Path:
     return video_path.parent / video_path.stem
 
 
-def get_candidate_dir(video_path: Path) -> Path:
-    return get_workspace_dir(video_path) / CANDIDATES_DIR
-
-
-def get_top_ranked_candidates_dir(video_path: Path) -> Path:
-    return get_workspace_dir(video_path) / TOP_RANKED_CANDIDATES_DIR
+def workspace_video_path(workspace_dir: Path) -> Path:
+    return workspace_dir.parent / f"{workspace_dir.name}.mov"
 
 
 def get_metadata_path(video_path: Path) -> Path:

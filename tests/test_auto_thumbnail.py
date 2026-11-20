@@ -3,7 +3,6 @@ import subprocess
 import cv2
 import numpy as np
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from video_prep import (

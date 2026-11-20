@@ -7,17 +7,16 @@ import config
 from schemas import MatchMetadata, UploadedRecord
 from utils import (
     SUPPORTED_IMAGE_EXTENSIONS,
-    get_candidate_dir,
     get_metadata,
     get_metadata_path,
     get_processed_video_path,
     get_selected_candidate_path,
     get_thumbnail_path,
-    get_top_ranked_candidates_dir,
     get_upload_record_path,
     get_uploaded_record,
     get_workspace_dir,
     scan_videos,
+    workspace_video_path,
 )
 
 _METADATA = MatchMetadata(
@@ -98,18 +97,9 @@ class TestPathHelpers:
         video2 = other_dir / "ms_LeovsKhanh.mov"
         assert get_workspace_dir(video2) == other_dir / "ms_LeovsKhanh"
 
-    def test_get_candidate_dir(self, patched_input):
-        video = patched_input / "ms_LeovsKhanh.mov"
-        assert (
-            get_candidate_dir(video) == patched_input / "ms_LeovsKhanh" / "candidates"
-        )
-
-    def test_get_top_ranked_candidates_dir(self, patched_input):
-        video = patched_input / "ms_LeovsKhanh.mov"
-        assert (
-            get_top_ranked_candidates_dir(video)
-            == patched_input / "ms_LeovsKhanh" / "top_candidates"
-        )
+    def test_workspace_video_path_is_sibling_mov(self, tmp_path):
+        ws = tmp_path / "workspaces" / "m1"
+        assert workspace_video_path(ws) == tmp_path / "workspaces" / "m1.mov"
 
     def test_get_metadata_path(self, patched_input):
         video = patched_input / "ms_LeovsKhanh.mov"

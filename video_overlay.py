@@ -1,5 +1,4 @@
 import json
-import math
 import subprocess
 import tempfile
 from pathlib import Path
@@ -102,7 +101,6 @@ def render_cafe_game_overlay(width: int, height: int) -> Image.Image:
     cafe_w, cafe_h = _measure_text(probe_draw, "CAFE", font)
     game_w, game_h = _measure_text(probe_draw, "GAME", font)
     line_gap = int(font_size * 0.08)
-    block_h = cafe_h + line_gap + game_h
 
     cafe_x = int(width * 0.07)
     game_x = int(width * 0.07)
