@@ -109,15 +109,28 @@ def match(id, *segments, team1=("Nam",), team2=("Tú",)):
     }
 
 
-def session(sources, *matches, selected=None):
+def session(sources, *matches, selected=None, open=None):
     return {
         "sources": list(sources),
         "matches": list(matches),
         "selected_match_id": selected,
+        "open": open,
     }
 
 
+def without_revision(d):
+    return {k: v for k, v in d.items() if k != "revision"}
+
+
+def stored_content():
+    return without_revision(store.load_session().to_dict())
+
+
 def put(client, body):
+    """PUT a session; a dict without a revision gets the stored one (a tab
+    that is up to date)."""
+    if isinstance(body, dict) and "revision" not in body:
+        body = {**body, "revision": store.load_session().revision}
     return client.put("/api/session", json=body)
 
 
@@ -182,7 +195,13 @@ def test_bootstrap_shape(client):
         "tournament": config.DEFAULT_TOURNAMENT,
         "privacy": config.VIDEO_PRIVACY_STATUS,
     }
-    assert body["session"] == {"sources": [], "matches": [], "selected_match_id": None}
+    assert body["session"] == {
+        "sources": [],
+        "matches": [],
+        "selected_match_id": None,
+        "open": None,
+        "revision": 0,
+    }
     assert body["auth"] == SIGNED_OUT
 
 
@@ -232,9 +251,9 @@ def test_players_sorted_by_usage(client):
 def test_put_session_persists_and_validates(client, source):
     good = session(["a.mov"], match("m1", ("a.mov", 0, 10)), selected="m1")
     r = put(client, good)
-    assert r.status_code == 200 and r.json == {"ok": True}
-    assert store.load_session().to_dict() == good
-    assert client.get("/api/bootstrap").json["session"] == good
+    assert r.status_code == 200 and r.json == {"ok": True, "revision": 1}
+    assert stored_content() == good
+    assert without_revision(client.get("/api/bootstrap").json["session"]) == good
 
     overlapping = session(
         ["a.mov"], match("m1", ("a.mov", 0, 10)), match("m2", ("a.mov", 5, 20))
@@ -242,7 +261,116 @@ def test_put_session_persists_and_validates(client, source):
     r = put(client, overlapping)
     assert r.status_code == 400
     assert any("chồng lên" in e for e in r.json["errors"])
-    assert store.load_session().to_dict() == good
+    assert stored_content() == good
+
+
+def test_put_session_with_stale_revision_is_refused_and_stores_nothing(
+    client, source
+):
+    first = session(["a.mov"], match("m1", ("a.mov", 0, 10)))
+    assert put(client, {**first, "revision": 0}).json["revision"] == 1
+    newer = session(["a.mov"], match("m1", ("a.mov", 0, 20)))
+    assert put(client, {**newer, "revision": 1}).json["revision"] == 2
+
+    # A tab that still holds revision 1 (or 0) tries to save its old copy.
+    for stale in (0, 1, 3):
+        r = put(client, {**first, "revision": stale})
+        assert r.status_code == 409
+        assert r.json["code"] == "stale_revision"
+        assert "tab khác" in r.json["errors"][0]
+    assert stored_content() == newer
+    assert store.load_session().revision == 2
+
+
+def test_put_session_without_revision_is_refused_as_stale(client, source):
+    body = session(["a.mov"])
+    r = client.put("/api/session", json=body)
+    assert r.status_code == 409 and r.json["code"] == "stale_revision"
+    assert stored_content() == session([])
+
+
+def test_refused_session_keeps_the_revision(client, source):
+    overlapping = session(
+        ["a.mov"], match("m1", ("a.mov", 0, 10)), match("m2", ("a.mov", 5, 20))
+    )
+    assert put(client, overlapping).status_code == 400
+    assert store.load_session().revision == 0
+
+
+def test_bootstrap_returns_the_stored_revision(client, source):
+    put(client, session(["a.mov"]))
+    put(client, session(["a.mov"]))
+    assert client.get("/api/bootstrap").json["session"]["revision"] == 2
+
+
+def test_open_point_is_saved_and_returned(client, source):
+    body = session(
+        ["a.mov"],
+        match("m1", ("a.mov", 0, 10)),
+        selected="m1",
+        open={"match_id": "m1", "source": "a.mov", "time": 42.5},
+    )
+    assert put(client, body).status_code == 200
+    assert stored_content() == body
+    assert client.get("/api/bootstrap").json["session"]["open"] == body["open"]
+
+
+@pytest.mark.parametrize(
+    "open",
+    [
+        {"match_id": "nope", "source": "a.mov", "time": 1},
+        {"match_id": "m1", "source": "b.mov", "time": 1},
+        {"match_id": "m1", "source": "a.mov", "time": 601},
+        {"match_id": "m1", "source": "a.mov", "time": 5},
+    ],
+)
+def test_invalid_open_point_is_refused(client, source, open):
+    body = session(["a.mov"], match("m1", ("a.mov", 0, 10)), open=open)
+    assert put(client, body).status_code == 400
+    assert stored_content() == session([])
+
+
+@pytest.mark.parametrize(
+    "open",
+    [
+        "m1",
+        {"match_id": "m1", "source": "a.mov"},
+        {"match_id": "m1", "source": "a.mov", "time": "1"},
+        {"match_id": 1, "source": "a.mov", "time": 1},
+    ],
+)
+def test_malformed_open_point_is_400(client, source, open):
+    body = session(["a.mov"], match("m1", ("a.mov", 0, 10)), open=open)
+    assert put(client, body).status_code == 400
+
+
+def test_open_point_on_missing_source_round_trips(client, source):
+    # gone.mov was ticked before its file went missing.
+    store.save_session(Session.from_dict(session(["a.mov", "gone.mov"])))
+    body = session(
+        ["a.mov", "gone.mov"],
+        match("m1", ("a.mov", 0, 10)),
+        open={"match_id": "m1", "source": "gone.mov", "time": 9999},
+    )
+    assert put(client, body).status_code == 200
+    assert stored_content() == body
+
+
+def test_enqueue_refuses_match_with_an_open_segment(client, source, signed_in):
+    body = session(
+        ["a.mov"],
+        match("m1", ("a.mov", 0, 10)),
+        match("m2", ("a.mov", 20, 30)),
+        open={"match_id": "m1", "source": "a.mov", "time": 40},
+    )
+    assert put(client, body).status_code == 200
+
+    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+
+    assert r.status_code == 400
+    assert any("đang mở" in e for e in r.json["errors"])
+    assert statuses(client) == {}
+    assert client.post("/api/jobs", json={"match_ids": ["m2"]}).status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -291,7 +419,7 @@ def test_session_with_missing_source_still_loads(client, source, signed_in):
     assert r.status_code == 200
     gone = [s for s in r.json["sources"] if s["name"] == "gone.mov"]
     assert gone and gone[0]["missing"] is True
-    assert r.json["session"] == stored
+    assert without_revision(r.json["session"]) == stored
 
     # Still saveable, even with a segment beyond any real duration.
     edited = session(
@@ -330,7 +458,7 @@ def test_put_session_cannot_change_locked_match(client, signed_in):
         r = put(client, body)
         assert r.status_code == 409
         assert r.json["errors"] and "m1" in r.json["errors"][0]
-    assert store.load_session().to_dict() == stored
+    assert stored_content() == stored
 
     # Unlocked matches still change freely.
     free = session(
@@ -567,9 +695,11 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
     assert sources["a.mov"]["archivable"] is True
     assert sources["b.mov"]["archivable"] is False  # m3 not done
 
+    revision = store.load_session().revision
     r = client.post("/api/sources/a.mov/archive")
 
     assert r.status_code == 200 and r.json == {"ok": True}
+    assert store.load_session().revision == revision + 1
     assert not (config.INPUT_DIR / "a.mov").exists()
     assert (config.COMPLETED_DIR / "sources" / "a.mov").exists()
     stored = store.load_session()
@@ -583,7 +713,7 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
     client.post("/api/jobs", json={"match_ids": ["m3"]})
     run_until_idle(queue)
     assert client.post("/api/sources/b.mov/archive").status_code == 200
-    assert store.load_session().to_dict() == session([])
+    assert stored_content() == session([])
 
 
 # ---- auth ----------------------------------------------------------------------

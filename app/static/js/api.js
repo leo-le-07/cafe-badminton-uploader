@@ -1,6 +1,7 @@
 // HTTP calls to the local server (app/server.py), one function per route.
 // Every failure throws an Error whose message is the server's first error;
-// `err.errors` holds them all and `err.status` the HTTP status (0 = network).
+// `err.errors` holds them all, `err.status` the HTTP status (0 = network) and
+// `err.code` the server's machine-readable code, if any.
 
 async function request(method, path, body, { keepalive = false } = {}) {
   const init = { method, keepalive, headers: {} };
@@ -24,15 +25,16 @@ async function request(method, path, body, { keepalive = false } = {}) {
     const errors = Array.isArray(data?.errors) && data.errors.length > 0
       ? data.errors
       : [`Lỗi máy chủ (${res.status})`];
-    throw apiError(res.status, errors);
+    throw apiError(res.status, errors, typeof data?.code === 'string' ? data.code : null);
   }
   return data;
 }
 
-function apiError(status, errors) {
+function apiError(status, errors, code = null) {
   const err = new Error(errors[0]);
   err.errors = errors;
   err.status = status;
+  err.code = code;
   return err;
 }
 

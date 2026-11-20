@@ -1,4 +1,11 @@
-from app.models import Match, Segment, Session, match_problems, validate_session
+from app.models import (
+    Match,
+    OpenPoint,
+    Segment,
+    Session,
+    match_problems,
+    validate_session,
+)
 
 DUR = {"a.mov": 100.0, "b.mov": 50.0}
 
@@ -56,3 +63,59 @@ def test_match_problems():
 def test_roundtrip_keeps_vietnamese_names():
     m = _m(t1=("Tú", "Hùng"))
     assert Match.from_dict(m.to_dict()) == m
+
+
+# ---- revision and the open point ------------------------------------------------
+
+
+def test_old_session_file_has_revision_0_and_no_open_point():
+    s = Session.from_dict({"sources": [], "matches": [], "selected_match_id": None})
+    assert s.revision == 0 and s.open is None
+
+
+def test_session_roundtrip_keeps_revision_and_open_point():
+    s = Session(["a.mov"], [_m()], "m1", open=OpenPoint("m1", "a.mov", 7.5), revision=3)
+    d = s.to_dict()
+    assert d["open"] == {"match_id": "m1", "source": "a.mov", "time": 7.5}
+    assert d["revision"] == 3
+    assert Session.from_dict(d) == s
+
+
+def _with_open(match_id="m1", source="a.mov", time=7.5, matches=None):
+    return Session(["a.mov"], matches or [_m()], "m1", open=OpenPoint(match_id, source, time))
+
+
+def test_valid_open_point():
+    assert validate_session(_with_open(), DUR) == []
+    # Right at the end of a segment (where I lands after a closed segment).
+    assert validate_session(_with_open(time=5.0), DUR) == []
+    assert validate_session(_with_open(time=0.0), DUR) == []
+
+
+def test_open_point_must_belong_to_a_match_and_a_ticked_source():
+    assert validate_session(_with_open(match_id="nope"), DUR)
+    assert validate_session(_with_open(source="b.mov"), DUR)
+
+
+def test_open_point_must_lie_within_its_source():
+    assert validate_session(_with_open(time=100.5), DUR)
+    assert validate_session(_with_open(time=-1), DUR)
+
+
+def test_open_point_time_unchecked_when_duration_unknown():
+    no_segments = [_m(segs=())]
+    assert validate_session(_with_open(time=1e6, matches=no_segments), {}) == []
+
+
+def test_open_point_cannot_start_inside_a_segment():
+    errors = validate_session(_with_open(time=3.0), DUR)
+    assert any("đang mở" in e for e in errors)
+    other = [_m("m1", segs=()), _m("m2", segs=[("a.mov", 1.0, 5.0)])]
+    assert validate_session(_with_open(time=3.0, matches=other), DUR)
+
+
+def test_match_with_open_point_is_not_ready():
+    assert match_problems(_m(), open_match_id="m1") == [
+        "Còn một đoạn đang mở — bấm O để đóng"
+    ]
+    assert match_problems(_m(), open_match_id="m2") == []

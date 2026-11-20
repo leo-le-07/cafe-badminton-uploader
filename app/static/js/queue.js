@@ -40,8 +40,8 @@ function statusText(job) {
 
 const safeLink = (url) => (typeof url === 'string' && /^https:\/\//.test(url) ? url : null);
 
-// `els`: {go, note, panel}. `deps`: {getState, getLocked, isSignedIn,
-// saveNow, onLocked(ids), onDone(), onSignedOut()}.
+// `els`: {go, note, panel}. `deps`: {getState, getLocked, getOpenMatchId,
+// isStale, isSignedIn, saveNow, onLocked(ids), onDone(), onSignedOut()}.
 export function createQueue(els, deps, initialJobs) {
   const { go, note, panel } = els;
   let jobs = [];
@@ -211,14 +211,16 @@ export function createQueue(els, deps, initialJobs) {
 
   function eligibleIds() {
     const locked = deps.getLocked();
+    const openId = deps.getOpenMatchId();
     return deps.getState().session.matches
-      .filter((m) => !locked.has(m.id) && matchProblems(m).length === 0)
+      .filter((m) => !locked.has(m.id) && matchProblems(m, openId).length === 0)
       .map((m) => m.id);
   }
 
   function renderGo() {
     const n = eligibleIds().length;
     const signedIn = deps.isSignedIn();
+    const stale = deps.isStale();
     // An enqueue error stays until the number of matches ready to go changes
     // (counted at the first render after the attempt, once its locks are gone).
     if (goError && !busy) {
@@ -226,10 +228,12 @@ export function createQueue(els, deps, initialJobs) {
       else if (n !== goError.n) goError = null;
     }
     go.textContent = busy ? 'Đang đưa vào hàng đợi…' : `Xử lý & upload ${n} trận đã đủ thông tin`;
-    go.disabled = busy || n === 0 || !signedIn;
+    go.disabled = busy || n === 0 || !signedIn || stale;
     let text = '';
     let detail = '';
-    if (goError) {
+    if (stale) {
+      text = 'Tải lại trang trước khi upload: phiên đã đổi ở tab khác';
+    } else if (goError) {
       text = goError.text;
       detail = goError.detail;
     } else if (!signedIn) {
@@ -237,11 +241,11 @@ export function createQueue(els, deps, initialJobs) {
     }
     if (note.textContent !== text) note.textContent = text;
     note.title = detail;
-    note.classList.toggle('err', !!goError);
+    note.classList.toggle('err', !!goError || stale);
   }
 
   async function enqueue() {
-    if (busy || !deps.isSignedIn()) return;
+    if (busy || !deps.isSignedIn() || deps.isStale()) return;
     const ids = eligibleIds();
     if (ids.length === 0) return;
     busy = true;

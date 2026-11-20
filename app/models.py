@@ -56,20 +56,41 @@ class Match:
 
 
 @dataclass
+class OpenPoint:
+    """Where the segment being kept right now starts (`I` pressed, no `O`
+    yet); `time` is local to `source`, like a segment's."""
+
+    match_id: str
+    source: str
+    time: float
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "OpenPoint":
+        return cls(match_id=d["match_id"], source=d["source"], time=float(d["time"]))
+
+
+@dataclass
 class Session:
     sources: list[str]
     matches: list[Match]
     selected_match_id: str | None
+    open: OpenPoint | None = None
+    # Bumped by every stored change; a save must name the revision it was
+    # based on, so a stale tab cannot overwrite newer work.
+    revision: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Session":
+        open = d.get("open")
         return cls(
             sources=list(d["sources"]),
             matches=[Match.from_dict(m) for m in d["matches"]],
             selected_match_id=d.get("selected_match_id"),
+            open=OpenPoint.from_dict(open) if open is not None else None,
+            revision=int(d.get("revision", 0)),
         )
 
 
@@ -157,11 +178,40 @@ def validate_session(session: Session, durations: dict[str, float]) -> list[str]
                     )
             placed.append((seg, match.id))
 
+    errors += _open_point_errors(session, durations, placed)
     return errors
 
 
-def match_problems(match: Match) -> list[str]:
-    """Return the reasons a match cannot be queued for upload yet."""
+def _open_point_errors(
+    session: Session, durations: dict[str, float], placed: list[tuple[Segment, str]]
+) -> list[str]:
+    point = session.open
+    if point is None:
+        return []
+    where = f"Đoạn đang mở của trận {point.match_id} ({point.source} {_fmt(point.time)})"
+    if point.match_id not in {m.id for m in session.matches}:
+        return [f"{where} thuộc trận không có trong phiên làm việc"]
+    if point.source not in session.sources:
+        return [f"{where} thuộc file nguồn chưa được chọn"]
+    if point.source in durations and not 0 <= point.time <= durations[point.source]:
+        return [f"{where} nằm ngoài thời lượng của file nguồn"]
+    return [
+        f"{where} bắt đầu bên trong đoạn {_fmt(seg.start)}–{_fmt(seg.end)}"
+        f" của trận {match_id}"
+        for seg, match_id in placed
+        if seg.source == point.source and seg.start < point.time < seg.end
+    ]
+
+
+OPEN_SEGMENT_PROBLEM = "Còn một đoạn đang mở — bấm O để đóng"
+
+
+def match_problems(match: Match, open_match_id: str | None = None) -> list[str]:
+    """Return the reasons a match cannot be queued for upload yet.
+
+    `open_match_id` is the match that owns the session's open segment, which
+    must be closed first. Mirrored by matchProblems in app/static/js/model.js.
+    """
     problems: list[str] = []
     if not any(name.strip() for name in match.team1):
         problems.append("Thiếu tên người chơi đội 1")
@@ -169,4 +219,6 @@ def match_problems(match: Match) -> list[str]:
         problems.append("Thiếu tên người chơi đội 2")
     if not match.segments:
         problems.append("Chưa có đoạn nào")
+    if open_match_id == match.id:
+        problems.append(OPEN_SEGMENT_PROBLEM)
     return problems

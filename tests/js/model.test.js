@@ -24,6 +24,8 @@ import {
   matchProblems,
   removeMatch,
   recordedDate,
+  editorFromStored,
+  storedSession,
 } from '../../app/static/js/model.js';
 
 const SOURCES = [
@@ -671,4 +673,98 @@ test('recordedDate lấy ngày quay của nguồn chứa đoạn đầu tiên', 
     recordedDate(match('m3', [{ source: 'gone.mov', start: 0, end: 1 }]), session, dates, '2000-01-01'),
     '2000-01-01',
   );
+});
+
+// ---------------------------------------------------------------- stored open point
+
+const OPEN_PROBLEM = 'Còn một đoạn đang mở — bấm O để đóng';
+
+function stored(open, extra = {}) {
+  return {
+    sources: ['a.mov', 'b.mov'],
+    matches: [match('m1', [{ source: 'b.mov', start: 0, end: 2 }])],
+    selected_match_id: 'm1',
+    open,
+    revision: 7,
+    ...extra,
+  };
+}
+
+test('editorFromStored đặt đoạn đang mở vào timeline theo giờ toàn cục', () => {
+  const { state, hiddenOpen } = editorFromStored(
+    deepFreeze(stored({ match_id: 'm1', source: 'b.mov', time: 10 })),
+    buildLayout(SOURCES),
+  );
+  assert.deepEqual(state.open, { matchId: 'm1', start: 110 });
+  assert.equal(hiddenOpen, null);
+  assert.equal('open' in state.session, false);
+  assert.equal('revision' in state.session, false);
+  assert.deepEqual(state.undo, []);
+});
+
+test('storedSession ghi đoạn đang mở theo giờ của file nguồn', () => {
+  const { state } = editorFromStored(deepFreeze(stored(null)), buildLayout(SOURCES));
+  const s = markIn(state, 100 + 307 / 30, ids());
+  const out = storedSession(s, null);
+  assert.deepEqual(out.open, { match_id: 'm1', source: 'b.mov', time: 307 / 30 });
+  assert.equal('revision' in out, false);
+  assert.deepEqual(storedSession(state, null).open, null);
+});
+
+test('đoạn đang mở ngay sau một đoạn ở file khác offset vẫn đúng lưới frame', () => {
+  const sources = [
+    { name: 'a.mov', duration: 600.123, fps: 29.97 },
+    { name: 'b.mov', duration: 50, fps: 29.97 },
+  ];
+  const session = {
+    sources: ['a.mov', 'b.mov'],
+    matches: [match('m1', []), match('m2', [{ source: 'b.mov', start: 30 / 29.97, end: 299 / 29.97 }])],
+    selected_match_id: 'm1',
+  };
+  // I inside m2's segment starts m1's open segment at that segment's end.
+  const s = markIn(editor(session, sources), 600.123 + 100 / 29.97, ids());
+  assert.equal(s.open.matchId, 'm1');
+  assert.equal(storedSession(s, null).open.time, 299 / 29.97);
+});
+
+test('đoạn đang mở được lưu, tải lại và hoàn tác như trước', () => {
+  const layout = buildLayout(SOURCES);
+  const s1 = markIn(editorFromStored(deepFreeze(stored(null)), layout).state, 20, ids());
+  const again = editorFromStored(deepFreeze({ ...storedSession(s1, null), revision: 8 }), layout).state;
+  assert.deepEqual(again.open, s1.open);
+  const closed = markOut(again, 30);
+  assert.deepEqual(closed.session.matches[0].segments[0], { source: 'a.mov', start: 20, end: 30 });
+  assert.deepEqual(undo(closed).open, again.open);
+});
+
+test('đoạn đang mở ở file đang thiếu không hiện nhưng được giữ nguyên khi lưu', () => {
+  const open = { match_id: 'm1', source: 'b.mov', time: 9999 };
+  const { state, hiddenOpen } = editorFromStored(deepFreeze(stored(open)), buildLayout([SOURCES[0]]));
+  assert.equal(state.open, null);
+  assert.deepEqual(hiddenOpen, open);
+  assert.deepEqual(storedSession(state, hiddenOpen).open, open);
+  // Bỏ file khỏi phiên, hoặc xoá trận, thì nó đi theo.
+  const noSource = { ...state, session: { ...state.session, sources: ['a.mov'] } };
+  assert.equal(storedSession(noSource, hiddenOpen).open, null);
+  const noMatch = { ...state, session: { ...state.session, matches: [] } };
+  assert.equal(storedSession(noMatch, hiddenOpen).open, null);
+  // Bấm I ở chỗ khác thì đoạn mới thay nó.
+  const marked = markIn(state, 50, ids());
+  assert.deepEqual(storedSession(marked, hiddenOpen).open, { match_id: 'm1', source: 'a.mov', time: 50 });
+});
+
+test('đoạn đang mở của trận không còn thì không được đặt lên timeline', () => {
+  const { state, hiddenOpen } = editorFromStored(
+    deepFreeze(stored({ match_id: 'gone', source: 'a.mov', time: 1 })),
+    buildLayout(SOURCES),
+  );
+  assert.equal(state.open, null);
+  assert.equal(storedSession(state, hiddenOpen).open, null);
+});
+
+test('matchProblems: trận còn đoạn đang mở chưa upload được', () => {
+  const ok = match('m1', [{ source: 'a.mov', start: 0, end: 1 }], { team1: ['Nam'], team2: ['Tú'] });
+  assert.deepEqual(matchProblems(ok, 'm1'), [OPEN_PROBLEM]);
+  assert.deepEqual(matchProblems(ok, 'm2'), []);
+  assert.deepEqual(matchProblems(ok, null), []);
 });

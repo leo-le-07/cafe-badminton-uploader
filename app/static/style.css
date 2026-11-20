@@ -11,7 +11,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -ap
 body.scrubbing, body.scrubbing * { cursor: grabbing !important; }
 body.dragging-edge, body.dragging-edge * { cursor: ew-resize !important; }
 
-.app { display: grid; grid-template-columns: 200px minmax(0, 1fr) 380px; grid-template-rows: auto minmax(0, 1fr); height: 100vh; min-height: 720px; }
+.app { display: grid; grid-template-columns: 200px minmax(0, 1fr) 380px; grid-template-rows: auto auto minmax(0, 1fr); height: 100vh; min-height: 720px; }
+aside, main, .right { grid-row: 3; }
 .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .top b { font-size: 15px; }
 .top .spacer { flex: 1; }
@@ -89,6 +90,12 @@ main { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
 .keys .big kbd { background: var(--accent); color: #000; border-color: #b39500; font-weight: 700; }
 
+/* banner: this tab's session is out of date */
+.stale { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: #3a1f1f; border-bottom: 1px solid #5a2a2a; color: var(--text); font-size: 13px; }
+.stale[hidden] { display: none; }
+.stale span { flex: 1; }
+.stale button { font: inherit; font-size: 12px; font-weight: 600; padding: 3px 12px; border-radius: 99px; border: 0; background: var(--accent); color: #000; cursor: pointer; white-space: nowrap; }
+
 /* top bar: YouTube sign-in */
 .auth { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .auth .login { font: inherit; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; border: 0; background: var(--accent); color: #000; cursor: pointer; white-space: nowrap; }
@@ -98,6 +105,7 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 /* source card: archive */
 .src .arch { display: block; margin-top: 6px; font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--m2); cursor: pointer; }
 .src .arch:hover { border-color: var(--m2); }
+.src .arch:disabled { color: var(--muted); border-color: var(--line); cursor: default; }
 
 /* right column: match cards (from the mockup) */
 .matches { padding: 12px; flex: 1; min-height: 0; overflow: auto; }

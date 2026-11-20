@@ -424,6 +424,43 @@ export function addSource(state, name, infos) {
   });
 }
 
+// ---------------------------------------------------------------- stored session
+
+// The server stores the session with two more fields: `open`, the open
+// segment as {match_id, source, time} with `time` local to its source, and
+// `revision`. The editor keeps the session without them and the open segment
+// in `state.open` (global time). An open point that cannot be placed (its
+// file is not on the timeline) is returned as `hiddenOpen`: it is not shown
+// but saved back unchanged while it still belongs to a match and a source of
+// the session (see storedSession).
+export function editorFromStored(stored, layout, defaults) {
+  const { open: point = null, revision: _revision, ...session } = stored;
+  let state = createEditor(session, layout, defaults);
+  if (!point || !findMatch(session, point.match_id)) return { state, hiddenOpen: null };
+  if (!entryOrNull(layout, point.source)) return { state, hiddenOpen: point };
+  const open = { matchId: point.match_id, start: toGlobal(layout, point.source, point.time) };
+  state = { ...state, open };
+  return { state, hiddenOpen: null };
+}
+
+// The session to store, with `open` (no revision). A new open segment
+// replaces the hidden one.
+export function storedSession(state, hiddenOpen = null) {
+  const { session, layout, open } = state;
+  let point = null;
+  if (open) {
+    const e = entryAt(layout, open.start);
+    point = { match_id: open.matchId, source: e.name, time: roundLocal(e, open.start - e.offset) };
+  } else if (
+    hiddenOpen &&
+    findMatch(session, hiddenOpen.match_id) &&
+    session.sources.includes(hiddenOpen.source)
+  ) {
+    point = hiddenOpen;
+  }
+  return { ...session, open: point };
+}
+
 // ---------------------------------------------------------------- views
 
 // Closed segments plus the open one, in global time, sorted by start. The open
@@ -454,11 +491,15 @@ export function recordedDate(match, session, dates, today) {
   return (source !== undefined && dates[source]) || today;
 }
 
-// Mirrors app.models.match_problems.
-export function matchProblems(match) {
+export const OPEN_SEGMENT_PROBLEM = 'Còn một đoạn đang mở — bấm O để đóng';
+
+// Mirrors app.models.match_problems. `openMatchId` is the match that owns
+// the open segment (null when none): it must be closed with O first.
+export function matchProblems(match, openMatchId = null) {
   const problems = [];
   if (!match.team1.some((n) => n.trim())) problems.push('Thiếu tên người chơi đội 1');
   if (!match.team2.some((n) => n.trim())) problems.push('Thiếu tên người chơi đội 2');
   if (match.segments.length === 0) problems.push('Chưa có đoạn nào');
+  if (openMatchId !== null && openMatchId === match.id) problems.push(OPEN_SEGMENT_PROBLEM);
   return problems;
 }

@@ -75,7 +75,7 @@ const LOCKED = `
   <div class="row2">Giải: <span class="inp ro"></span></div>
   <div class="title-prev">Tiêu đề: <span></span></div>`;
 
-// `deps`: {dispatch, getState, getLocked}.
+// `deps`: {dispatch, getState, getLocked, getOpenMatchId}.
 export function createMatches(container, deps) {
   container.innerHTML = '<h4></h4><div class="cards"></div><p class="hint empty">Chưa có trận nào. Tick một video ở cột trái, rồi bấm <kbd>I</kbd> để bắt đầu giữ trận đầu tiên.</p>';
   const heading = container.querySelector('h4');
@@ -139,7 +139,7 @@ export function createMatches(container, deps) {
       card.tournament.value = match.tournament;
     }
     if (card.warn) {
-      const text = warningText(matchProblems(match));
+      const text = warningText(matchProblems(match, deps.getOpenMatchId()));
       setText(card.warn, text);
       card.warn.hidden = !text;
     }

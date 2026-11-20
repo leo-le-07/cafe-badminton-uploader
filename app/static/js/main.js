@@ -2,8 +2,8 @@
 // handles the keyboard and autosaves the session.
 //
 // Exports: getState(), dispatch(fn), subscribe(listener), getBootstrap(),
-//   getLocked(), setLocked(ids), getPlayhead(), seek(t), onEnterKey(handler),
-//   saveNow(), matchColor(index)
+//   getLocked(), setLocked(ids), getOpenMatchId(), getPlayhead(), seek(t),
+//   onEnterKey(handler), saveNow(), matchColor(index)
 // The right-hand column (matches.js, queue.js) and the sign-in control
 // (auth.js) are created here once the bootstrap data has arrived.
 
@@ -13,19 +13,20 @@ import { createMatches } from './matches.js';
 import {
   addSource,
   buildLayout,
-  createEditor,
   deleteSegmentAt,
+  editorFromStored,
   markIn,
   markOut,
   moveEdge,
   newMatch,
   removeSource,
   selectMatch,
+  storedSession,
   undo,
 } from './model.js';
 import { createPlayer, formatTimecode } from './player.js';
 import { createQueue } from './queue.js';
-import { isTransientSaveError, saveRetryDelay } from './save.js';
+import { isStaleSessionError, isTransientSaveError, saveRetryDelay } from './save.js';
 import { createTimeline, matchColor } from './timeline.js';
 
 export { matchColor };
@@ -34,6 +35,9 @@ const SAVE_DELAY_MS = 1000;
 
 let boot = null;
 let state = null;
+let revision = 0; // revision of the stored session this tab is based on
+let hiddenOpen = null; // stored open point whose file is not on the timeline
+let staleError = null; // set once another tab saved: this tab saves nothing more
 let locked = new Set();
 let player = null;
 let timeline = null;
@@ -50,6 +54,8 @@ const $ = (id) => document.getElementById(id);
 export const getState = () => state;
 export const getBootstrap = () => boot;
 export const getLocked = () => locked;
+// The match that owns the open segment (shown or not), or null.
+export const getOpenMatchId = () => storedSession(state, hiddenOpen).open?.match_id ?? null;
 export const getPlayhead = () => (player ? player.time() : 0);
 export const seek = (t) => player && player.seek(t);
 
@@ -83,7 +89,7 @@ function setState(next) {
   const prev = state;
   state = next;
   if (next.layout !== prev.layout) player.setLayout(next.layout);
-  if (next.session !== prev.session) scheduleSave();
+  if (next.session !== prev.session || next.open !== prev.open) scheduleSave();
   renderAll();
 }
 
@@ -149,7 +155,9 @@ function renderSources() {
     else info = [formatLength(s.duration), formatRecorded(s.recorded_at)].filter(Boolean).join(' · ');
     const cls = ['src', on ? 'on' : '', s.missing || s.unreadable ? 'missing' : ''].join(' ');
     const chk = idx >= 0 ? `<span class="chk">${circled(idx)}</span>` : on ? '<span class="chk">✕</span>' : '';
-    const arch = s.archivable ? '<button type="button" class="arch">Lưu trữ</button>' : '';
+    const arch = s.archivable
+      ? `<button type="button" class="arch"${staleError ? ' disabled' : ''}>Lưu trữ</button>`
+      : '';
     return `<div class="${cls}" role="checkbox" aria-checked="${on}" data-name="${esc(s.name)}">${chk}${esc(s.name)}<small>${info}</small>${arch}</div>`;
   }).join('');
 }
@@ -172,6 +180,7 @@ function toggleSource(name) {
 // Archiving moves the file out of INPUT_DIR and drops it from the stored
 // session, so the editor is reloaded from the server afterwards.
 async function archiveSource(name) {
+  if (staleError) return;
   if (!window.confirm('Chuyển file gốc sang thư mục lưu trữ?')) return;
   try {
     await saveNow();
@@ -304,53 +313,80 @@ function onKey(e) {
 
 // ---------------------------------------------------------------- autosave
 
-let saved = null; // last session the server accepted
-let attempted = null; // last session the server refused (400/409); never re-sent
+// What gets saved is the session plus the open segment; a "version" is the
+// pair, compared by identity.
+const current = () => ({ session: state.session, open: state.open });
+const isCurrent = (v) => !!v && v.session === state.session && v.open === state.open;
+
+let saved = null; // last version the server accepted
+let attempted = null; // last version the server refused (400/409); never re-sent
 let saveTimer = 0;
 let saving = null; // promise of the save in flight
 let saveError = null; // error of the last failed save
-let failed = null; // session whose last save failed transiently (network, 5xx)
+let failed = null; // version whose last save failed transiently (network, 5xx)
 let retries = 0; // automatic retries of `failed` so far
 
 function scheduleSave() {
+  if (staleError) return;
   clearTimeout(saveTimer);
   retries = 0;
   saveTimer = setTimeout(flushSave, SAVE_DELAY_MS);
   if (!saving) setSaveStatus('saving', 'Đang lưu…');
 }
 
+// Another tab saved since this one loaded. Nothing more is saved from here,
+// and the upload and archive buttons stay off until the page is reloaded.
+function markStale(err) {
+  staleError = err;
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  setSaveStatus('error', 'Chưa lưu: phiên đã đổi ở tab khác', err.message);
+  $('stale-text').textContent = `${err.message} Những thay đổi ở tab này từ lúc đó chưa được lưu.`;
+  $('stale').hidden = false;
+  renderSources();
+  if (queue) queue.renderGo();
+}
+
 async function flushSave(opts) {
   clearTimeout(saveTimer);
   saveTimer = 0;
+  if (staleError) return;
   // Never two saves at once: the one in flight saves again when it ends.
   if (saving) return;
-  if (state.session === saved) {
+  if (isCurrent(saved)) {
     setSaveStatus('ok', 'Đã lưu');
     return;
   }
-  if (state.session === attempted) return; // refused; wait for a change
-  const session = state.session;
+  if (isCurrent(attempted)) return; // refused; wait for a change
+  const version = current();
+  const body = { ...storedSession(state, hiddenOpen), revision };
   setSaveStatus('saving', 'Đang lưu…');
-  saving = api.saveSession(session, opts).then(
-    () => {
-      saved = session;
+  saving = api.saveSession(body, opts).then(
+    (res) => {
+      revision = res.revision;
+      saved = version;
       saveError = null;
       failed = null;
       retries = 0;
-      if (state.session === saved) setSaveStatus('ok', 'Đã lưu');
+      if (isCurrent(saved)) setSaveStatus('ok', 'Đã lưu');
     },
     (err) => {
       saveError = err;
+      if (isStaleSessionError(err)) {
+        attempted = version;
+        markStale(err);
+        return;
+      }
       const detail = (err.errors || [err.message]).join('\n');
       if (!isTransientSaveError(err)) {
-        attempted = session;
+        attempted = version;
         setSaveStatus('error', `Lưu thất bại: ${err.message}`, detail);
         return;
       }
-      // Transient: try the same session again by itself after a backoff.
-      failed = session;
+      // Transient: try the same version again by itself after a backoff.
+      failed = version;
       setSaveStatus('error', `Lưu thất bại: ${err.message} · sẽ thử lại`, detail);
-      if (state.session === session) {
+      if (isCurrent(version)) {
         clearTimeout(saveTimer);
         saveTimer = setTimeout(flushSave, saveRetryDelay(retries));
         retries += 1;
@@ -359,29 +395,30 @@ async function flushSave(opts) {
   );
   await saving;
   saving = null;
-  if (state.session !== session) await flushSave(opts);
+  if (!isCurrent(version)) await flushSave(opts);
 }
 
-// Saves now and resolves once the server holds the current session; throws
-// the server's error when the save fails. A refused session (400/409) is not
+// Saves now and resolves once the server holds the current version; throws
+// the server's error when the save fails. A refused version (400/409) is not
 // re-sent; a transient failure always gets one fresh attempt here. Used
 // before enqueue and archive, which act on the stored session.
 export async function saveNow() {
   let tried = false;
-  while (state.session !== saved) {
+  while (!isCurrent(saved)) {
+    if (staleError) throw staleError;
     if (saving) {
       await saving;
       continue;
     }
-    if (state.session === attempted) throw saveError;
-    if (tried && state.session === failed) throw saveError;
+    if (isCurrent(attempted)) throw saveError;
+    if (tried && isCurrent(failed)) throw saveError;
     tried = true;
     await flushSave();
   }
 }
 
 function flushOnLeave() {
-  if (state && state.session !== saved && state.session !== attempted && !saving) {
+  if (state && !staleError && !isCurrent(saved) && !isCurrent(attempted) && !saving) {
     flushSave({ keepalive: true });
   }
 }
@@ -393,8 +430,9 @@ function load(data) {
   boot = data;
   const infos = new Map(readableInfos().map((s) => [s.name, s]));
   const layout = buildLayout(boot.session.sources.filter((n) => infos.has(n)).map((n) => infos.get(n)));
-  state = createEditor(boot.session, layout, boot.defaults);
-  saved = boot.session;
+  ({ state, hiddenOpen } = editorFromStored(boot.session, layout, boot.defaults));
+  revision = boot.session.revision ?? 0;
+  saved = current();
   attempted = null;
   failed = null;
   retries = 0;
@@ -444,12 +482,14 @@ async function start() {
   player.onTime(renderPlayhead);
 
   auth = createAuth($('auth'), boot.auth, () => queue && queue.renderGo());
-  matchesView = createMatches($('matches'), { dispatch, getState, getLocked });
+  matchesView = createMatches($('matches'), { dispatch, getState, getLocked, getOpenMatchId });
   queue = createQueue(
     { go: $('go'), note: $('go-note'), panel: $('queue') },
     {
       getState,
       getLocked,
+      getOpenMatchId,
+      isStale: () => !!staleError,
       isSignedIn: () => auth.get().ok,
       saveNow,
       onLocked: setLocked,
@@ -463,6 +503,7 @@ async function start() {
   renderAll();
   queue.startPolling();
 
+  $('stale-reload').addEventListener('click', () => window.location.reload());
   $('sources').addEventListener('click', (e) => {
     const el = e.target.closest('.src');
     if (!el) return;

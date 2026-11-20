@@ -1,8 +1,10 @@
 """Local Flask server for the match editor: page, media streaming and JSON API.
 
-Every JSON error has the shape {"errors": ["..."]}. Requests that read and
-then write the stored session (or enqueue from it) hold one lock, so
-concurrent requests on Flask's threaded server cannot interleave.
+Every JSON error has the shape {"errors": ["..."]}, plus a machine-readable
+"code" where the client must react to it (a stale session revision).
+Requests that read and then write the stored session (or enqueue from it)
+hold one lock, so concurrent requests on Flask's threaded server cannot
+interleave.
 """
 
 import subprocess
@@ -39,11 +41,18 @@ HTTP_ERROR_MESSAGES = {
 }
 
 
+STALE_REVISION_MESSAGE = (
+    "Phiên đã được thay đổi ở tab khác. Tải lại trang để tiếp tục."
+)
+STALE_REVISION_CODE = "stale_revision"
+
+
 class ApiError(Exception):
-    def __init__(self, status: int, errors: list[str]):
+    def __init__(self, status: int, errors: list[str], code: str | None = None):
         super().__init__(errors)
         self.status = status
         self.errors = errors
+        self.code = code
 
 
 # ---- request parsing ------------------------------------------------------------
@@ -74,8 +83,18 @@ def _check_match_shape(m) -> bool:
     )
 
 
-def parse_session(body) -> Session:
-    """The session in a PUT body; ApiError(400) if its shape is wrong."""
+def _check_open_shape(point) -> bool:
+    return point is None or (
+        isinstance(point, dict)
+        and isinstance(point.get("match_id"), str)
+        and isinstance(point.get("source"), str)
+        and _is_number(point.get("time"))
+    )
+
+
+def parse_session(body) -> tuple[Session, int | None]:
+    """The session in a PUT body and the revision it was based on (None when
+    the body has none); ApiError(400) if its shape is wrong."""
     ok = (
         isinstance(body, dict)
         and _is_str_list(body.get("sources"))
@@ -85,10 +104,15 @@ def parse_session(body) -> Session:
             body.get("selected_match_id") is None
             or isinstance(body["selected_match_id"], str)
         )
+        and _check_open_shape(body.get("open"))
+        and (
+            body.get("revision") is None
+            or (type(body["revision"]) is int and body["revision"] >= 0)
+        )
     )
     if not ok:
         raise ApiError(400, ["Dữ liệu phiên làm việc không đúng định dạng"])
-    return Session.from_dict(body)
+    return Session.from_dict({**body, "revision": 0}), body.get("revision")
 
 
 def parse_match_ids(body) -> list[str]:
@@ -211,6 +235,7 @@ def _check_content(new: Session, old: Session, locked: set[str]) -> None:
                 for m in new.matches
             ],
             selected_match_id=new.selected_match_id,
+            open=new.open,
         ),
         durations,
     )
@@ -230,7 +255,8 @@ def _enqueue_errors(ids: list[str], session: Session, locked: set[str]) -> list[
         if id in locked:
             errors.append(f"Trận {id} đã có trong hàng đợi")
             continue
-        errors += [f"Trận {id}: {p}" for p in match_problems(m)]
+        open_id = session.open.match_id if session.open else None
+        errors += [f"Trận {id}: {p}" for p in match_problems(m, open_id)]
         unusable = []
         for name in dict.fromkeys(s.source for s in m.segments):
             if name not in infos:
@@ -254,10 +280,27 @@ def _drop_source(session: Session, name: str) -> Session:
         for m in session.matches
         if not m.segments or any(s.source in sources for s in m.segments)
     ]
+    ids = {m.id for m in matches}
     selected = session.selected_match_id
-    if selected not in {m.id for m in matches}:
+    if selected not in ids:
         selected = None
-    return Session(sources=sources, matches=matches, selected_match_id=selected)
+    open = session.open
+    if open is not None and (open.source == name or open.match_id not in ids):
+        open = None
+    return Session(
+        sources=sources,
+        matches=matches,
+        selected_match_id=selected,
+        open=open,
+        revision=session.revision,
+    )
+
+
+def _save_next(session: Session, base: Session) -> int:
+    """Store `session` as the revision after `base`'s; returns it."""
+    revision = base.revision + 1
+    store.save_session(replace(session, revision=revision))
+    return revision
 
 
 # ---- app ------------------------------------------------------------------------
@@ -283,6 +326,8 @@ def create_app(queue: JobQueue) -> Flask:
 
     @app.errorhandler(ApiError)
     def api_error(e: ApiError):
+        if e.code:
+            return jsonify(errors=e.errors, code=e.code), e.status
         return jsonify(errors=e.errors), e.status
 
     @app.errorhandler(HTTPException)
@@ -331,14 +376,17 @@ def create_app(queue: JobQueue) -> Flask:
 
     @app.put("/api/session")
     def put_session():
-        new = parse_session(request.get_json(silent=True))
+        new, based_on = parse_session(request.get_json(silent=True))
         with session_lock:
             old = store.load_session()
+            if based_on != old.revision:
+                # Another tab saved since this one loaded: never overwrite.
+                raise ApiError(409, [STALE_REVISION_MESSAGE], code=STALE_REVISION_CODE)
             locked = queue.locked_match_ids()
             _check_locks(new, old, locked)
             _check_content(new, old, locked)
-            store.save_session(new)
-        return jsonify(ok=True)
+            revision = _save_next(new, old)
+        return jsonify(ok=True, revision=revision)
 
     @app.get("/api/jobs")
     def jobs():
@@ -398,7 +446,7 @@ def create_app(queue: JobQueue) -> Flask:
                 )
             if on_disk:
                 archive_source(name)
-            store.save_session(_drop_source(session, name))
+            _save_next(_drop_source(session, name), session)
         return jsonify(ok=True)
 
     @app.get("/api/auth")
