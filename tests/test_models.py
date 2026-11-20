@@ -112,11 +112,12 @@ def test_open_point_time_unchecked_when_duration_unknown():
     assert validate_session(_with_open(time=1e6, matches=no_segments), {}) == []
 
 
-def test_open_point_cannot_start_inside_a_segment():
-    errors = validate_session(_with_open(time=3.0), DUR)
-    assert any("đang mở" in e for e in errors)
+def test_open_point_inside_a_segment_does_not_block_saving():
+    # Harmless (O clips against neighbouring segments), while refusing the
+    # save would lose the user's work.
+    assert validate_session(_with_open(time=3.0), DUR) == []
     other = [_m("m1", segs=()), _m("m2", segs=[("a.mov", 1.0, 5.0)])]
-    assert validate_session(_with_open(time=3.0, matches=other), DUR)
+    assert validate_session(_with_open(time=3.0, matches=other), DUR) == []
 
 
 def test_match_with_open_point_is_not_ready():

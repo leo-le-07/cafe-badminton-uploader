@@ -305,15 +305,22 @@ export function moveEdge(state, matchId, segIndex, edge, t, locked = NO_LOCKS) {
   const others = state.session.matches
     .flatMap((x) => x.segments.filter((s) => s.source === seg.source && s !== seg));
 
+  // The open point is an obstacle like a neighbour's edge: a segment may
+  // touch it but never grow over it.
+  const at = state.open ? toLocal(state.layout, state.open.start) : null;
+  const point = at && at.name === seg.source ? roundLocal(e, at.time) : null;
+
   let value;
   if (edge === 'start') {
-    const lo = others.filter((s) => s.end <= seg.start + EPS).reduce((a, s) => Math.max(a, s.end), 0);
+    let lo = others.filter((s) => s.end <= seg.start + EPS).reduce((a, s) => Math.max(a, s.end), 0);
+    if (point !== null && point <= seg.start + EPS) lo = Math.max(lo, point);
     const hi = frameBefore(e, seg.end);
     value = Math.max(lo, Math.min(local, hi));
   } else {
-    const hi = others
+    let hi = others
       .filter((s) => s.start >= seg.end - EPS)
       .reduce((a, s) => Math.min(a, s.start), e.duration);
+    if (point !== null && point >= seg.end - EPS) hi = Math.min(hi, point);
     const lo = frameAfter(e, seg.start);
     value = Math.min(hi, Math.max(local, lo));
   }

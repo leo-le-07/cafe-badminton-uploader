@@ -418,6 +418,8 @@ function flushOnLeave() {
 // ---------------------------------------------------------------- bootstrap
 
 // (Re)builds the editor from a bootstrap payload. Undo history starts over.
+// The tab now holds the server's current session and revision, so it is no
+// longer stale: saving, upload and archive work again.
 function load(data) {
   boot = data;
   const infos = new Map(readableInfos().map((s) => [s.name, s]));
@@ -429,6 +431,8 @@ function load(data) {
   failed = null;
   retries = 0;
   clearTimeout(saveTimer);
+  staleError = null;
+  $('stale').hidden = true;
   locked = new Set(boot.jobs.map((j) => j.match.id));
 }
 

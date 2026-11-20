@@ -328,7 +328,6 @@ def test_open_point_is_saved_and_returned(client, source):
         {"match_id": "nope", "source": "a.mov", "time": 1},
         {"match_id": "m1", "source": "b.mov", "time": 1},
         {"match_id": "m1", "source": "a.mov", "time": 601},
-        {"match_id": "m1", "source": "a.mov", "time": 5},
     ],
 )
 def test_invalid_open_point_is_refused(client, source, open):
@@ -349,6 +348,22 @@ def test_invalid_open_point_is_refused(client, source, open):
 def test_malformed_open_point_is_400(client, source, open):
     body = session(["a.mov"], match("m1", ("a.mov", 0, 10)), open=open)
     assert put(client, body).status_code == 400
+
+
+def test_open_point_inside_a_segment_is_saved_and_still_blocks_enqueue(
+    client, source, signed_in
+):
+    body = session(
+        ["a.mov"],
+        match("m1", ("a.mov", 0, 30)),
+        match("m2", ("a.mov", 40, 50)),
+        open={"match_id": "m2", "source": "a.mov", "time": 20},
+    )
+    assert put(client, body).status_code == 200
+    assert stored_content() == body
+    r = client.post("/api/jobs", json={"match_ids": ["m2"]})
+    assert r.status_code == 400 and any("đang mở" in e for e in r.json["errors"])
+    assert client.post("/api/jobs", json={"match_ids": ["m1"]}).status_code == 200
 
 
 def test_open_point_on_missing_source_round_trips(client, source):

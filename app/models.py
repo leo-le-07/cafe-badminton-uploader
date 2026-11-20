@@ -177,13 +177,14 @@ def validate_session(session: Session, durations: dict[str, float]) -> list[str]
                     )
             placed.append((seg, match.id))
 
-    errors += _open_point_errors(session, durations, placed)
+    errors += _open_point_errors(session, durations)
     return errors
 
 
-def _open_point_errors(
-    session: Session, durations: dict[str, float], placed: list[tuple[Segment, str]]
-) -> list[str]:
+def _open_point_errors(session: Session, durations: dict[str, float]) -> list[str]:
+    """An open point inside a segment is allowed: it is harmless (closing it
+    with O clips against neighbouring segments) and refusing the save would
+    risk losing the user's work. The editor never puts it there anyway."""
     point = session.open
     if point is None:
         return []
@@ -196,12 +197,7 @@ def _open_point_errors(
         return [f"{where} thuộc file nguồn chưa được chọn"]
     if point.source in durations and not 0 <= point.time <= durations[point.source]:
         return [f"{where} nằm ngoài thời lượng của file nguồn"]
-    return [
-        f"{where} bắt đầu bên trong đoạn {_fmt(seg.start)}–{_fmt(seg.end)}"
-        f" của trận {match_id}"
-        for seg, match_id in placed
-        if seg.source == point.source and seg.start < point.time < seg.end
-    ]
+    return []
 
 
 OPEN_SEGMENT_PROBLEM = "Còn một đoạn đang mở — bấm O để đóng"

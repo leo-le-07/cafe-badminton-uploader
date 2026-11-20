@@ -790,3 +790,81 @@ test('matchProblems: tên hoặc giải có dấu < >', () => {
   assert.deepEqual(matchProblems(match('m1', seg, { team1: ['<Nam>'], team2: ['Tú'] })), [message]);
   assert.deepEqual(matchProblems(match('m1', seg, { team1: ['Nam'], team2: ['Tú'], tournament: 'Cup > 1' })), [message]);
 });
+
+// ---------------------------------------------------------------- open point as an obstacle
+
+// The rule the stored session must keep: the open point never lies strictly
+// inside a segment of its source.
+function assertOpenOutsideSegments(state) {
+  const { open } = storedSession(state, null);
+  if (!open) return;
+  for (const m of state.session.matches) {
+    for (const s of m.segments) {
+      if (s.source !== open.source) continue;
+      assert.ok(!(s.start < open.time && open.time < s.end),
+        `open ${open.time} inside ${m.id} [${s.start}, ${s.end}]`);
+    }
+  }
+}
+
+function withOpenAt20(m1Segments, openMatch = 'm2') {
+  const session = {
+    sources: ['a.mov', 'b.mov'],
+    matches: [match('m1', m1Segments), match('m2', [])],
+    selected_match_id: openMatch,
+  };
+  const s = markIn(editor(session), 20, ids());
+  assert.deepEqual(s.open, { matchId: openMatch, start: 20 });
+  return s;
+}
+
+test('moveEdge: kéo mép cuối qua điểm đang mở thì dừng ở đó (lỗi reviewer báo)', () => {
+  const s = withOpenAt20([{ source: 'a.mov', start: 0, end: 10 }]);
+  const moved = moveEdge(s, 'm1', 0, 'end', 30);
+  assert.equal(moved.session.matches[0].segments[0].end, 20);
+  assertOpenOutsideSegments(moved);
+});
+
+test('moveEdge: kéo mép đầu qua điểm đang mở thì dừng ở đó', () => {
+  const s = withOpenAt20([{ source: 'a.mov', start: 30, end: 40 }]);
+  const moved = moveEdge(s, 'm1', 0, 'start', 5);
+  assert.equal(moved.session.matches[0].segments[0].start, 20);
+  assertOpenOutsideSegments(moved);
+});
+
+test('moveEdge: điểm đang mở của chính trận đó cũng chặn', () => {
+  const s = withOpenAt20([{ source: 'a.mov', start: 0, end: 10 }], 'm1');
+  const moved = moveEdge(s, 'm1', 0, 'end', 30);
+  assert.equal(moved.session.matches[0].segments[0].end, 20);
+  assertOpenOutsideSegments(moved);
+});
+
+test('moveEdge: điểm đang mở ở file khác không chặn', () => {
+  const session = {
+    sources: ['a.mov', 'b.mov'],
+    matches: [match('m1', [{ source: 'a.mov', start: 0, end: 10 }]), match('m2', [])],
+    selected_match_id: 'm2',
+  };
+  const s = markIn(editor(session), 120, ids());
+  assert.equal(moveEdge(s, 'm1', 0, 'end', 30).session.matches[0].segments[0].end, 30);
+});
+
+test('I/O trên đoạn đã đóng và I khi đang mở không bao giờ đặt điểm mở vào trong đoạn', () => {
+  const segs = [{ source: 'a.mov', start: 0, end: 10 }, { source: 'a.mov', start: 40, end: 50 }];
+  let s = editor({ sources: ['a.mov', 'b.mov'], matches: [match('m1', segs), match('m2', [{ source: 'a.mov', start: 60, end: 70 }])], selected_match_id: 'm1' });
+  for (const t of [5, 45, 65, 20, 3, 62, 48]) {
+    s = markIn(s, t, ids());
+    assertOpenOutsideSegments(s);
+  }
+  s = markOut(s, 55);
+  assertOpenOutsideSegments(s);
+  // With no open segment, I and O move the selected match's own edges.
+  s = markIn(s, 42, ids());
+  s = markOut(s, 47);
+  assert.equal(s.open, null);
+  s = markIn(s, 25, ids());
+  for (const t of [4, 44, 66]) {
+    s = markIn(s, t, ids());
+    assertOpenOutsideSegments(s);
+  }
+});
