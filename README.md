@@ -8,7 +8,7 @@ You open the editor in the browser, tick the recordings, mark where each match s
 
 1. Install system dependencies: `brew install ffmpeg` (provides `ffmpeg` and `ffprobe`).
 2. Install Python dependencies: `uv sync` (Python 3.13+).
-3. Create an environment file: copy `env.template` to `.env.dev` (or `.env.production`, used with `APP_ENV=production`) and adjust the values. See [Configuration](#configuration).
+3. Create an environment file: copy `env.template` to `.env` and adjust the values. See [Configuration](#configuration).
 4. Place `client_secret.json` (Google OAuth client for the YouTube Data API) in the project root.
 
 ## Sign in to YouTube
@@ -24,8 +24,7 @@ Matches cannot be queued while you are signed out. If the token expires during p
 ## Run
 
 ```bash
-uv run main.py                              # uses .env.dev
-APP_ENV=production uv run main.py           # uses .env.production
+uv run main.py
 ```
 
 This starts the editor at `http://127.0.0.1:8790/` (port from `APP_PORT`) and opens it in your browser after a second. Set `CAFE_NO_BROWSER=1` to skip opening the browser. Stop the app with `Ctrl+C`.
@@ -88,13 +87,15 @@ Each `uv run main.py` opens a new tab, so older tabs can pile up. Only the tab t
 
 ## What happens after pressing upload
 
-"Xử lý & upload N trận đã đủ thông tin" queues every complete match. Queued matches are locked; you can keep marking other matches while the queue runs. Matches are processed one at a time, in order, through these steps:
+The switch in the top bar picks the mode: **Dev** uploads as `private`, **Production** as `public`. That is the only difference between the two. The app remembers the last choice; without one it starts in Dev.
+
+"Xử lý & upload N trận · private" (or "· public") queues every complete match with the mode selected at that moment. Moving the switch afterwards does not change matches already in the queue; each queue row shows its privacy. Queued matches are locked; you can keep marking other matches while the queue runs. Matches are processed one at a time, in order, through these steps:
 
 1. **metadata:** title, description and tags from the form.
 2. **select_thumbnail:** scores frames sampled from the match's segments and picks the best one.
 3. **render_thumbnail:** draws the styled thumbnail.
 4. **encode:** one ffmpeg run cuts the segments from the original files, joins them and adds the logo plus the CAFE GAME (first 12 seconds) and THANKS FOR WATCHING (last 12 seconds, if the match is longer than 24 seconds) overlays. Uses `h264_videotoolbox`, falling back to `libx264`.
-5. **upload:** resumable upload with privacy `VIDEO_PRIVACY_STATUS`.
+5. **upload:** resumable upload with the privacy of the mode the match was queued in.
 6. **set_thumbnail**
 7. **cleanup:** archives the match (see below).
 
@@ -126,7 +127,7 @@ For every folder in `COMPLETED_DIR` that has an upload record and a dropped imag
 
 ## Configuration
 
-Variables in `.env.dev` / `.env.production` (see `env.template`):
+Variables in `.env` (see `env.template`):
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -134,12 +135,11 @@ Variables in `.env.dev` / `.env.production` (see `env.template`):
 | `COMPLETED_DIR` | required | Archive of finished matches and archived sources. Created if missing |
 | `DATA_DIR` | `./data` | Session, player-name history and workspaces of matches in progress |
 | `APP_PORT` | `8790` | Port of the editor on `127.0.0.1` |
-| `VIDEO_PRIVACY_STATUS` | `private` | `public`, `unlisted` or `private`; applies to every upload |
 | `CANDIDATE_THUMBNAIL_NUM` | `10` | Frames sampled per match when picking the thumbnail |
 | `LOGO_PATH` | `assets/logo.png` | Logo burned into the video (skipped with a warning if missing) |
 | `QUOTA_RETRY_HOURS` | `4` | Wait before retrying after a YouTube quota error |
 
-Outside the env file: `APP_ENV` picks the env file (`dev` by default), `CAFE_NO_BROWSER=1` skips opening the browser, `LOG_LEVEL` sets log verbosity (`INFO` by default).
+Outside the env file: `CAFE_NO_BROWSER=1` skips opening the browser, `LOG_LEVEL` sets log verbosity (`INFO` by default).
 
 ## Troubleshooting
 
