@@ -18,6 +18,14 @@ aside, main, .right { grid-row: 3; }
 .top .spacer { flex: 1; }
 .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill:empty { display: none; }
+
+/* Dev / Production switch */
+.mode { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
+.mode button { font: inherit; font-size: 12px; padding: 3px 11px; border: 0; background: var(--panel2); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.mode button[aria-pressed="true"] { background: var(--line); color: var(--text); font-weight: 600; cursor: default; }
+.mode button:disabled { cursor: default; }
+.mode[data-mode="production"] { border-color: var(--danger); }
+.mode[data-mode="production"] button[aria-pressed="true"] { background: var(--danger); color: #000; }
 .pill.ok { color: var(--m2); }
 .pill.bad { color: var(--danger); border-color: #5a2a2a; }
 aside, main, .right { overflow: auto; }
@@ -155,7 +163,9 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 .job { font-size: 12px; margin-bottom: 8px; }
 .job .nm { display: flex; justify-content: space-between; gap: 8px; }
 .job .nm .t { font-style: normal; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.job .nm span { color: var(--muted); flex-shrink: 0; }
+.job .nm span { color: var(--muted); flex-shrink: 0; margin-left: auto; }
+.job .nm .privacy { flex-shrink: 0; font-weight: 400; font-size: 11px; padding: 0 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.job .nm .privacy.public { color: var(--danger); border-color: var(--danger); }
 .job .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
 .job .bar div { height: 100%; background: var(--m2); }
 .job.done .nm span, .job.done .nm a { color: var(--m2); }

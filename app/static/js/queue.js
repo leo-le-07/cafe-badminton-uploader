@@ -43,6 +43,14 @@ export const connectionLost = (failedPolls) => failedPolls >= 2;
 
 // Buttons of a queue row. "Đưa về chỉnh sửa" only before the video is on
 // YouTube (the server refuses it after that, and while an upload is live).
+export const goLabel = (n, privacy) => `Xử lý & upload ${n} trận · ${privacy}`;
+
+// The privacy a job uploads with; jobs without a known mode are private,
+// like on the server (Job.from_dict).
+export function jobPrivacy(job, modes) {
+  return Object.hasOwn(modes, job.mode) ? modes[job.mode] : 'private';
+}
+
 export function rowActions(job) {
   const actions = [];
   if (job.status === 'error' || job.status === 'waiting_quota') actions.push('retry');
@@ -161,7 +169,9 @@ export function createQueue(els, deps, initialJobs) {
     } else {
       span = esc(statusText(job));
     }
-    let html = `<div class="nm"><em class="t" title="${title}">${title}</em><span>${span}</span></div>`;
+    const privacy = jobPrivacy(job, deps.modes);
+    const tag = `<b class="privacy ${privacy}">${esc(privacy)}</b>`;
+    let html = `<div class="nm"><em class="t" title="${title}">${title}</em>${tag}<span>${span}</span></div>`;
     if (job.status !== 'done') html += `<div class="bar"><div style="width:${percentOf(job)}%"></div></div>`;
     if (job.status === 'error' && job.error) {
       html += `<div class="msg" title="${esc(job.error)}">${esc(job.error)}</div>`;
@@ -250,7 +260,7 @@ export function createQueue(els, deps, initialJobs) {
       if (goError.n === null) goError.n = n;
       else if (n !== goError.n) goError = null;
     }
-    go.textContent = busy ? 'Đang đưa vào hàng đợi…' : `Xử lý & upload ${n} trận đã đủ thông tin`;
+    go.textContent = busy ? 'Đang đưa vào hàng đợi…' : goLabel(n, deps.modes[deps.getMode()]);
     go.disabled = busy || n === 0 || !signedIn || stale;
     let text = '';
     let detail = '';
@@ -271,6 +281,9 @@ export function createQueue(els, deps, initialJobs) {
     if (busy || !deps.isSignedIn() || deps.isStale()) return;
     const ids = eligibleIds();
     if (ids.length === 0) return;
+    // The mode on the button when it was pressed, even if the switch moves
+    // while the session is being saved.
+    const mode = deps.getMode();
     busy = true;
     goError = null;
     // Lock them here first, so nothing changes them between the save and
@@ -286,7 +299,7 @@ export function createQueue(els, deps, initialJobs) {
           errors: err.errors,
         });
       }
-      const created = await api.enqueue(ids);
+      const created = await api.enqueue(ids, mode);
       const added = new Set(created.map((j) => j.match.id));
       jobs = [...jobs.filter((j) => !added.has(j.match.id)), ...created];
       applied = ++seq; // older polls in flight do not know these jobs yet

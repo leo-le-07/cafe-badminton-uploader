@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { connectionLost, rowActions } from '../../app/static/js/queue.js';
+import { connectionLost, goLabel, jobPrivacy, rowActions } from '../../app/static/js/queue.js';
 
 test('mất kết nối chỉ báo sau 2 lần hỏi hàng đợi thất bại liên tiếp', () => {
   assert.equal(connectionLost(0), false);
@@ -18,4 +18,18 @@ test('nút của từng dòng theo trạng thái', () => {
   assert.deepEqual(rowActions({ status: 'done' }), []);
   // Đã có video trên YouTube: không đưa về chỉnh sửa được.
   assert.deepEqual(rowActions({ status: 'error', youtube_link: 'https://youtu.be/x' }), ['retry']);
+});
+
+test('nút upload ghi rõ privacy', () => {
+  assert.equal(goLabel(3, 'public'), 'Xử lý & upload 3 trận · public');
+  assert.equal(goLabel(0, 'private'), 'Xử lý & upload 0 trận · private');
+});
+
+test('nhãn privacy của một trận theo mode của nó, thiếu thì private', () => {
+  const modes = { dev: 'private', production: 'public' };
+  assert.equal(jobPrivacy({ mode: 'production' }, modes), 'public');
+  assert.equal(jobPrivacy({ mode: 'dev' }, modes), 'private');
+  assert.equal(jobPrivacy({}, modes), 'private');
+  assert.equal(jobPrivacy({ mode: 'prod' }, modes), 'private');
+  assert.equal(jobPrivacy({ mode: 'toString' }, modes), 'private');
 });

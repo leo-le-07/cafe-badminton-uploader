@@ -9,6 +9,7 @@
 
 import * as api from './api.js';
 import { createAuth } from './auth.js';
+import { createModeState, createModeToggle } from './mode.js';
 import { esc, formatLength, pad } from './format.js';
 import { createMatches } from './matches.js';
 import {
@@ -102,10 +103,6 @@ function renderAll() {
 }
 
 // ---------------------------------------------------------------- top bar
-
-function renderTop() {
-  $('defaults-pill').textContent = `Mặc định: ${boot.defaults.tournament} · ${boot.defaults.privacy}`;
-}
 
 function setSaveStatus(kind, text, detail = '') {
   const pill = $('save-pill');
@@ -467,7 +464,6 @@ async function start() {
   }
   load(data);
 
-  renderTop();
   setSaveStatus('ok', 'Đã lưu');
   player = createPlayer($('stage'), state.layout);
   timeline = createTimeline($('timeline'), {
@@ -478,6 +474,12 @@ async function start() {
   player.onTime(renderPlayhead);
 
   auth = createAuth($('auth'), boot.auth, () => queue && queue.renderGo());
+  const modeState = createModeState(boot.mode, api.setMode);
+  createModeToggle($('mode'), {
+    modes: boot.modes,
+    state: modeState,
+    onChange: () => queue && queue.renderGo(),
+  });
   matchesView = createMatches($('matches'), { dispatch, getState, getLocked, getOpenMatchId });
   queue = createQueue(
     { go: $('go'), note: $('go-note'), panel: $('queue') },
@@ -487,6 +489,8 @@ async function start() {
       getOpenMatchId,
       isStale: () => !!staleError,
       isSignedIn: () => auth.get().ok,
+      getMode: () => modeState.get(),
+      modes: boot.modes,
       saveNow,
       onLocked: setLocked,
       onDone: refreshSources,
