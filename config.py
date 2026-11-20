@@ -4,20 +4,24 @@ from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
 
 env = os.getenv("APP_ENV", "dev")
-dotenv_path = find_dotenv(f".env.{env}")
 
-if not dotenv_path:
-    dotenv_path = find_dotenv(".env")
-    if dotenv_path:
-        print(f"Warning: .env.{env} not found, using .env instead")
-    else:
-        raise FileNotFoundError(
-            f"Environment file not found: .env.{env} or .env. "
-            f"Set APP_ENV environment variable (e.g., APP_ENV=dev or APP_ENV=production)"
-        )
+# APP_ENV=test reads only the process environment (tests/conftest.py sets
+# it), so a developer's .env.dev can never point the tests at real folders.
+if env != "test":
+    dotenv_path = find_dotenv(f".env.{env}")
 
-load_dotenv(dotenv_path=dotenv_path, override=True)
-print(f"Loaded environment variables from {Path(dotenv_path).name}")
+    if not dotenv_path:
+        dotenv_path = find_dotenv(".env")
+        if dotenv_path:
+            print(f"Warning: .env.{env} not found, using .env instead")
+        else:
+            raise FileNotFoundError(
+                f"Environment file not found: .env.{env} or .env. "
+                f"Set APP_ENV environment variable (e.g., APP_ENV=dev or APP_ENV=production)"
+            )
+
+    load_dotenv(dotenv_path=dotenv_path, override=True)
+    print(f"Loaded environment variables from {Path(dotenv_path).name}")
 
 
 def get_env_path(var_name: str, create_if_missing: bool = False) -> Path:
