@@ -99,6 +99,8 @@ Ghi kết quả thành một dòng ở đầu mục "Task 2" của file plan nà
 
 ### Task 2 (có điều kiện): Bản proxy để xem trong editor
 
+**Kết quả Task 1 (2026-11-20): BỎ QUA task này.** Chủ project đã thử file quay thật 1GB và 2GB trên Chrome, phát và kéo con trỏ ổn. Editor phát thẳng file gốc.
+
 Chỉ làm nếu Task 1 kết luận cần. Nếu bỏ qua, `media_probe.playback_path(source)` ở Task 4 trả luôn file gốc.
 
 **Files:**
