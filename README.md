@@ -1,96 +1,154 @@
 # Cafe Badminton Video Uploader
 
-A CLI tool to batch process and upload badminton match videos to YouTube with auto-generated thumbnails.
+A local web app that cuts badminton match recordings into one video per match and uploads them to YouTube with a generated title, description, overlays and thumbnail.
+
+You open the editor in the browser, tick the recordings, mark where each match starts and stops on a timeline, type the players' names and press one button. The app does the rest in the background: one match at a time, it encodes, uploads, sets the thumbnail and archives.
 
 ## Setup
 
-1. Install system dependencies: `brew install ffmpeg` (required for thumbnail extraction)
-2. Install Python dependencies: `uv sync`
-3. Create environment files:
-   - Copy `env.template` to `.env.dev` for development
-   - Copy `env.template` to `.env.production` for production
-   - Adjust values in each file
-4. Place `client_secret.json` (YouTube API credentials) in root
+1. Install system dependencies: `brew install ffmpeg` (provides `ffmpeg` and `ffprobe`).
+2. Install Python dependencies: `uv sync` (Python 3.13+).
+3. Create an environment file: copy `env.template` to `.env.dev` (or `.env.production`, used with `APP_ENV=production`) and adjust the values. See [Configuration](#configuration).
+4. Place `client_secret.json` (Google OAuth client for the YouTube Data API) in the project root.
 
-## Video filename format
-
-```
-{matchType}_{team1}vs{team2}_{tournament}.mov
-```
-
-- matchType: ms, md, ws, wd, xd (singles/doubles)
-- team names: separated by `z` for doubles (e.g., `KhanhzLeo`)
-- tournament: optional, defaults to "Cafe Game"
-
-Examples:
-- `md_NhozVinhvsKhanhzLeo.MOV`
-- `xd_KhanhzVyvsZezTram_Friendly Game.mov`
-
-## Testing
-
-```bash
-uv run pytest                                        # Run all tests
-uv run pytest --cov=. --cov-report=term-missing -q  # Coverage summary with missing lines
-uv run pytest --cov=. --cov-report=html && open htmlcov/index.html  # HTML coverage report
-```
-
-## Usage
-
-### Prerequisites
-
-1. **Start Temporal Server** (required for workflow execution):
-   ```bash
-   temporal server start-dev
-   ```
-   This starts a local Temporal development server. Keep this running in a separate terminal.
-
-2. **Start the Worker** (required to process workflows):
-   ```bash
-   APP_ENV=production uv run main.py worker
-   ```
-   Keep this running in a separate terminal. The worker will process workflows and activities.
-
-### Environment Selection
-
-The tool supports multiple environment configurations via `APP_ENV`:
-
-```bash
-APP_ENV=production uv run main.py start
-```
-
-### CLI Commands
-
-#### Authenticate with YouTube
+## Sign in to YouTube
 
 ```bash
 uv run main.py auth
 ```
-Opens browser for OAuth authentication and saves token for future use.
 
-#### Start Workflows
+Opens the browser for Google OAuth and saves the token to `token.json` in the project root. You can also sign in from the editor: when you are signed out, the top bar shows "○ YouTube chưa đăng nhập" with a "Đăng nhập YouTube" button that starts the same flow.
 
-```bash
-uv run main.py start
-```
-Scans the input directory and starts a workflow for each video found. All workflows will be processed concurrently by the worker.
+Matches cannot be queued while you are signed out. If the token expires during processing, the match stops with an error asking you to sign in again and press "Thử lại".
 
-#### Debug Individual Steps
+## Run
 
 ```bash
-uv run main.py debug <step> <video_path>
+uv run main.py                              # uses .env.dev
+APP_ENV=production uv run main.py           # uses .env.production
 ```
 
-Run individual workflow steps for debugging without executing the full workflow. Available steps:
-- `metadata` - Create and store video metadata
-- `upload` - Upload video to YouTube
-- `auto-select-thumbnail` - Auto-select the best thumbnail frame using FFmpeg
-- `render` - Render final thumbnail
-- `set-thumbnail` - Set thumbnail for uploaded video
-- `update-visibility` - Update video visibility
-- `cleanup` - Move video to completed directory
+This starts the editor at `http://127.0.0.1:8790/` (port from `APP_PORT`) and opens it in your browser after a second. Set `CAFE_NO_BROWSER=1` to skip opening the browser. Stop the app with `Ctrl+C`.
 
-Example:
+The server only listens on `127.0.0.1`. Closing the browser tab does not stop the queue; stopping the process does, and the next start continues from the unfinished step.
+
+## Using the editor
+
+The page has three columns:
+
+- **Left: sources.** The `.mov` / `.mp4` files directly in `INPUT_DIR`, with duration and recording time. Ticked files are joined into one continuous timeline in recording order, with a separator and the file name at each join. Unticking a file that has marked segments asks for confirmation, because those segments are deleted.
+- **Middle: player and timeline.** The video always shows the frame under the yellow playhead. The thin bar on top shows the whole timeline; click it to jump. In the detail view below, drag with the left mouse button to scrub, drag a segment's white edge to adjust a cut point, and zoom with the slider, the `+` / `−` buttons or keys, or `⌘`/`Ctrl` + mouse wheel. "Vừa màn hình" zooms back out to fit everything.
+- **Right: matches and queue.** One card per match, the "Xử lý & upload N trận đã đủ thông tin" button and the queue.
+
+### Marking matches
+
+A match is a list of segments `(source file, in point, out point)`. Anything not inside a segment is dropped (shown as grey stripes).
+
+- Press `I` to start a segment of the selected match at the playhead and `O` to close it. Press `N` to close the open segment (if any) and start a new match.
+- To drop a stretch in the middle of a match (a break, a long pause), press `O` where it starts and `I` where it ends. The match then has two segments.
+- A match split across two recordings: tick both files and mark the segments on both sides of the join. An open segment that runs across a join is split into two segments of the same match automatically.
+- Click a match card (or one of its segments on the timeline) to select it; `I` / `O` then add segments to that match.
+- `I` inside a closed segment of the selected match moves that segment's in point to the playhead; `O` moves its out point.
+- Segments never overlap, even across matches; an edit that would overlap stops at the neighbouring segment's edge.
+- Every change to segments or matches can be undone with `⌘Z`.
+
+### Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `I` | Start a new segment of the selected match at the playhead |
+| `O` | Close the open segment at the playhead |
+| `N` | Close the open segment (if any), create a new match and select it |
+| `Space` | Play / pause |
+| `J` `K` `L` | Reverse / stop / forward. Press `L` again for 2×, 4×, 8× |
+| `←` `→` | Back / forward 1 second |
+| `⇧←` `⇧→` | Back / forward 10 seconds |
+| `,` `.` | Back / forward 1 frame |
+| `+` `−` | Zoom the timeline |
+| `⌘Z` (`Ctrl+Z`) | Undo |
+| `Enter` | Jump to the player-name field of the selected match |
+| `Delete` or `Backspace` | Delete the segment under the playhead |
+
+Shortcuts are ignored while you type in a field; `Esc` leaves the field and returns to the editor. `Enter` and `Space` on a focused button activate the button instead.
+
+### Match details
+
+Each match card has:
+
+- **Match type:** MS, MD, WS, WD, XD. A new match takes the type of the previous one.
+- **Two teams:** type a name and press `Enter` or `,` to add it as a chip; `Tab` moves to the other team. Suggestions come from names used before, most used first. On the first run the history is seeded from the `metadata.json` files already in `COMPLETED_DIR`.
+- **Tournament:** defaults to "Cafe Game".
+- A preview of the YouTube title, e.g. `Nam/Hùng vs Tú/Long | Cafe Game (2026-11-20)`. The date is the recording date of the match's first source file, not the upload date.
+- The number of segments and the total length after cutting. A match with no segments or a missing name on either side shows a warning and cannot be queued.
+
+Everything autosaves to `DATA_DIR/session.json` within a few seconds; the top bar shows the save state. Reopening the app restores the same session.
+
+## What happens after pressing upload
+
+"Xử lý & upload N trận đã đủ thông tin" queues every complete match. Queued matches are locked; you can keep marking other matches while the queue runs. Matches are processed one at a time, in order, through these steps:
+
+1. **metadata:** title, description and tags from the form.
+2. **select_thumbnail:** scores frames sampled from the match's segments and picks the best one.
+3. **render_thumbnail:** draws the styled thumbnail.
+4. **encode:** one ffmpeg run cuts the segments from the original files, joins them and adds the logo plus the CAFE GAME (first 12 seconds) and THANKS FOR WATCHING (last 12 seconds, if the match is longer than 24 seconds) overlays. Uses `h264_videotoolbox`, falling back to `libx264`.
+5. **upload:** resumable upload with privacy `VIDEO_PRIVACY_STATUS`.
+6. **set_thumbnail**
+7. **cleanup:** archives the match (see below).
+
+Each queue row shows the current step and percentage for encode and upload, and a YouTube link when done.
+
+- **Error:** the row shows the message and a "Thử lại" button, which resumes from the failed step. The queue moves on to the next match.
+- **YouTube quota exceeded:** the match shows "Chờ quota YouTube, sẽ tự thử lại" and is retried every `QUOTA_RETRY_HOURS` hours while the app runs, and on every start. Later matches still do their steps up to upload, then wait too. "Thử lại" retries immediately.
+- **Interrupted upload** (app stopped, crash): the next start resumes the same YouTube upload session, so no duplicate video is created. A match that already has a YouTube video id is never uploaded again.
+- **"Đưa về chỉnh sửa":** on a queued ("Đang chờ") or failed match that is not on YouTube yet and not being processed right now, removes it from the queue, deletes its partial work and unlocks it for editing. Once a match has a YouTube video id, edit it on YouTube instead.
+
+## Where files end up
+
+- While processing: `DATA_DIR/workspaces/<match_id>/`.
+- After a match is done: its workspace moves to `COMPLETED_DIR/<recording date>_<match_id>/` with `metadata.json`, `selected.jpg`, `thumbnail.jpg`, `upload.json`, `job.json` and `segments.json` (the cut list, so the video can be rebuilt from the sources). The encoded video is deleted after upload.
+- Source recordings stay in `INPUT_DIR`. When every match that uses a source is done, that source shows a "Lưu trữ" button in the left column; pressing it moves the file to `COMPLETED_DIR/sources/` and removes it from the session.
+
+## Replace a thumbnail
+
+To use your own thumbnail image for an uploaded match, drop the image (for example `.jpg` or `.png`) into that match's folder in `COMPLETED_DIR`, then run:
+
 ```bash
-uv run main.py debug metadata input/md_HuyzVietvsThezLeo.mov
+uv run main.py rethumbnail
 ```
 
+For every folder in `COMPLETED_DIR` that has an upload record and a dropped image, it renders the image through the thumbnail template, sets it on YouTube and deletes the dropped image. Works for folders from the old version of the app as well.
+
+## Configuration
+
+Variables in `.env.dev` / `.env.production` (see `env.template`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `INPUT_DIR` | required | Folder with the recordings (`.mov`, `.mp4`). Created if missing |
+| `COMPLETED_DIR` | required | Archive of finished matches and archived sources. Created if missing |
+| `DATA_DIR` | `./data` | Session, player-name history and workspaces of matches in progress |
+| `APP_PORT` | `8790` | Port of the editor on `127.0.0.1` |
+| `VIDEO_PRIVACY_STATUS` | `private` | `public`, `unlisted` or `private`; applies to every upload |
+| `CANDIDATE_THUMBNAIL_NUM` | `10` | Frames sampled per match when picking the thumbnail |
+| `LOGO_PATH` | `assets/logo.png` | Logo burned into the video (skipped with a warning if missing) |
+| `QUOTA_RETRY_HOURS` | `4` | Wait before retrying after a YouTube quota error |
+
+Outside the env file: `APP_ENV` picks the env file (`dev` by default), `CAFE_NO_BROWSER=1` skips opening the browser, `LOG_LEVEL` sets log verbosity (`INFO` by default).
+
+## Troubleshooting
+
+**"Ứng dụng đã đang chạy với thư mục dữ liệu …"**
+Another instance of the app is already running with the same `DATA_DIR` (only one may run at a time). Open the URL in the message in your browser, or stop the other instance first.
+
+**"Không mở được cổng 8790 trên 127.0.0.1 …"**
+Another program uses the port. Set `APP_PORT` to a different port in your `.env` file and run again.
+
+## Development
+
+```bash
+uv run pytest                 # Python tests (YouTube API is always mocked)
+node --test tests/js/         # Frontend logic tests
+uv run ruff check .           # Lint
+uv run ruff format .          # Format
+uv run pytest --cov=. --cov-report=term-missing -q  # Coverage summary
+```
