@@ -1,4 +1,6 @@
 import threading
+import time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -181,7 +183,7 @@ def test_bootstrap_shape(client):
         "privacy": config.VIDEO_PRIVACY_STATUS,
     }
     assert body["session"] == {"sources": [], "matches": [], "selected_match_id": None}
-    assert body["auth"] == {"ok": False, "channel": None}
+    assert body["auth"] == SIGNED_OUT
 
 
 def test_sources_sorted_by_recorded_at_with_problems_last(client):
@@ -568,34 +570,141 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
 # ---- auth ----------------------------------------------------------------------
 
 
+SIGNED_OUT = {
+    "ok": False,
+    "channel": None,
+    "login": {"in_progress": False, "error": None},
+}
+
+
 def test_auth_endpoint_reports_not_logged_in_without_token(client):
-    assert client.get("/api/auth").json == {"ok": False, "channel": None}
+    assert client.get("/api/auth").json == SIGNED_OUT
 
 
-def test_login_runs_in_background_once(client, monkeypatch):
-    release = threading.Event()
-    calls = []
+def login_state(client):
+    return client.get("/api/auth").json["login"]
 
-    def fake_authenticate():
-        calls.append(1)
-        release.wait(5)
 
-    monkeypatch.setattr(auth_service, "authenticate", fake_authenticate)
-    cleared = threading.Event()
-    real_clear = auth_service.clear_auth_status_cache
-    monkeypatch.setattr(
-        auth_service,
-        "clear_auth_status_cache",
-        lambda: (real_clear(), cleared.set()),
-    )
+def wait_for_login_to_end(client):
+    deadline = time.monotonic() + 5
+    while login_state(client)["in_progress"]:
+        assert time.monotonic() < deadline, "login thread did not end"
+        time.sleep(0.01)
+    return login_state(client)
 
+
+class FakeLogin:
+    """Stands in for auth_service.authenticate: each call blocks until released,
+    then raises the next queued error (or succeeds)."""
+
+    def __init__(self):
+        self.calls = 0
+        self.errors = []
+        self.release = threading.Event()
+
+    def __call__(self):
+        self.calls += 1
+        assert self.release.wait(5)
+        if self.errors:
+            raise self.errors.pop(0)
+
+
+@pytest.fixture
+def fake_login(monkeypatch):
+    login = FakeLogin()
+    monkeypatch.setattr(auth_service, "authenticate", login)
+    yield login
+    login.release.set()
+
+
+def test_login_runs_in_background_once(client, fake_login):
     assert client.post("/api/auth/login").status_code == 202
     assert client.post("/api/auth/login").status_code == 202
-    release.set()
-    assert cleared.wait(5)
-    assert calls == [1]
+    assert login_state(client) == {"in_progress": True, "error": None}
+    assert client.get("/api/bootstrap").json["auth"]["login"]["in_progress"] is True
+
+    fake_login.release.set()
+
+    assert wait_for_login_to_end(client) == {"in_progress": False, "error": None}
+    assert fake_login.calls == 1
 
 
-def test_unknown_api_route_answers_json(client):
-    r = client.get("/api/nope")
-    assert r.status_code == 404 and r.json["errors"]
+def test_login_clears_the_auth_cache_when_it_ends(client, fake_login, monkeypatch):
+    assert client.get("/api/auth").json["ok"] is False  # cached as signed out
+    client.post("/api/auth/login")
+    youtube = MagicMock()
+    youtube.channels.return_value.list.return_value.execute.return_value = {
+        "items": [{"id": "UC1", "snippet": {"title": "Cafe Badminton"}}]
+    }
+    monkeypatch.setattr(auth_service, "get_client", lambda: youtube)
+    assert client.get("/api/auth").json["ok"] is False  # still cached
+
+    fake_login.release.set()
+    wait_for_login_to_end(client)
+
+    auth = client.get("/api/auth").json
+    assert auth["ok"] is True and auth["channel"] == "Cafe Badminton"
+
+
+def test_login_failure_is_reported(client, fake_login):
+    fake_login.errors.append(RuntimeError("access_denied"))
+    fake_login.release.set()
+    client.post("/api/auth/login")
+
+    error = wait_for_login_to_end(client)["error"]
+
+    assert error.startswith("Đăng nhập YouTube thất bại") and "access_denied" in error
+    assert client.get("/api/bootstrap").json["auth"]["login"]["error"] == error
+
+
+def test_login_timeout_is_reported(client, fake_login):
+    fake_login.errors.append(auth_service.LoginTimeoutError())
+    fake_login.release.set()
+    client.post("/api/auth/login")
+    assert "Hết thời gian" in wait_for_login_to_end(client)["error"]
+
+
+def test_login_without_client_secret_is_reported(client):
+    # The real authenticate(): the working directory has no client_secret.json.
+    client.post("/api/auth/login")
+    assert "client_secret.json" in wait_for_login_to_end(client)["error"]
+
+
+def test_login_can_be_retried_after_a_failure(client, fake_login):
+    fake_login.errors.append(auth_service.LoginTimeoutError())
+    fake_login.release.set()
+    client.post("/api/auth/login")
+    assert wait_for_login_to_end(client)["error"]
+
+    fake_login.release.clear()
+    assert client.post("/api/auth/login").status_code == 202
+    assert login_state(client) == {"in_progress": True, "error": None}
+    fake_login.release.set()
+
+    assert wait_for_login_to_end(client) == {"in_progress": False, "error": None}
+    assert fake_login.calls == 2
+
+
+@pytest.mark.parametrize(
+    "method, path, code, message",
+    [
+        ("get", "/api/nope", 404, "Không tìm thấy"),
+        ("delete", "/api/session", 405, "Phương thức"),
+    ],
+)
+def test_http_errors_on_api_are_vietnamese_json(client, method, path, code, message):
+    r = getattr(client, method)(path)
+    assert r.status_code == code
+    assert r.json["errors"] and message in r.json["errors"][0]
+
+
+def test_unexpected_error_answers_vietnamese_json(queue, monkeypatch):
+    app = server.create_app(queue)
+
+    def broken():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(store, "load_session", broken)
+    r = app.test_client().get("/api/jobs")
+    assert r.status_code == 500
+    assert "Lỗi máy chủ" in r.json["errors"][0]

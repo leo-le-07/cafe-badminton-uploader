@@ -1,8 +1,13 @@
 import argparse
+import fcntl
 import os
 import sys
 import threading
 import webbrowser
+from pathlib import Path
+from typing import NoReturn, TextIO
+
+from werkzeug.serving import make_server
 
 import config
 from app import server, store
@@ -17,26 +22,77 @@ logger = get_logger(__name__)
 
 HOST = "127.0.0.1"
 BROWSER_DELAY_SECONDS = 1.0
+LOCK_FILE = "app.lock"
+
+
+class AlreadyRunningError(Exception):
+    """Another process already serves this DATA_DIR."""
+
+
+def acquire_instance_lock(data_dir: Path) -> TextIO:
+    """Hold an exclusive lock on DATA_DIR/app.lock for as long as the returned
+    file stays open. The OS drops it when the process dies, so a lock file
+    left by a crash is harmless."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    handle = open(data_dir / LOCK_FILE, "a")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise AlreadyRunningError(str(data_dir))
+    return handle
+
+
+def _fail(message: str) -> NoReturn:
+    print(message, file=sys.stderr)
+    sys.exit(1)
 
 
 def serve():
-    """Run the editor: background job queue plus the local web server."""
-    store.seed_players_from_completed()
-    queue = JobQueue()
-    queue.start()
+    """Run the editor: background job queue plus the local web server.
+
+    Only one process may run per DATA_DIR, and the port is bound before the
+    queue starts, so two workers never process the same jobs."""
     url = f"http://{HOST}:{config.APP_PORT}/"
-    if os.environ.get("CAFE_NO_BROWSER") != "1":
-        # Give the server a moment to bind before the page loads.
-        opener = threading.Timer(BROWSER_DELAY_SECONDS, webbrowser.open, args=(url,))
-        opener.daemon = True
-        opener.start()
-    logger.info(f"Editor running at {url}")
     try:
-        server.create_app(queue).run(
-            host=HOST, port=config.APP_PORT, threaded=True, use_reloader=False
+        instance_lock = acquire_instance_lock(config.DATA_DIR)
+    except AlreadyRunningError:
+        _fail(
+            f"Ứng dụng đã đang chạy với thư mục dữ liệu {config.DATA_DIR}. "
+            f"Mở {url} trong trình duyệt."
         )
+    try:
+        store.seed_players_from_completed()
+        queue = JobQueue()
+        app = server.create_app(queue)
+        try:
+            # werkzeug prints the cause and raises SystemExit when bind fails.
+            httpd = make_server(HOST, config.APP_PORT, app, threaded=True)
+        except (OSError, SystemExit):
+            _fail(
+                f"Không mở được cổng {config.APP_PORT} trên {HOST}; có thể một "
+                "chương trình khác đang dùng cổng này. Đặt APP_PORT trong file "
+                ".env sang cổng khác rồi chạy lại."
+            )
+        queue.start()
+        if os.environ.get("CAFE_NO_BROWSER") != "1":
+            opener = threading.Timer(
+                BROWSER_DELAY_SECONDS, webbrowser.open, args=(url,)
+            )
+            opener.daemon = True
+            opener.start()
+        logger.info(f"Editor running at {url}")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Stop the queue first: it aborts a running encode or upload at
+            # its next progress report, and the step resumes on next start.
+            queue.stop()
+            httpd.server_close()
     finally:
-        queue.stop()
+        instance_lock.close()
 
 
 def cmd_auth(args):

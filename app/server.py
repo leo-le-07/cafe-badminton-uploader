@@ -30,6 +30,14 @@ SIGNED_OUT_MESSAGE = (
     "Chưa đăng nhập YouTube hoặc phiên đăng nhập đã hết hạn. Hãy đăng nhập rồi thử lại."
 )
 
+HTTP_ERROR_MESSAGES = {
+    400: "Yêu cầu không hợp lệ",
+    404: "Không tìm thấy địa chỉ này",
+    405: "Phương thức không được hỗ trợ cho địa chỉ này",
+    413: "Dữ liệu gửi lên quá lớn",
+    500: "Lỗi máy chủ, xem log của ứng dụng để biết chi tiết",
+}
+
 
 class ApiError(Exception):
     def __init__(self, status: int, errors: list[str]):
@@ -260,8 +268,10 @@ def create_app(queue: JobQueue) -> Flask:
     app.json.ensure_ascii = False
     app.url_map.merge_slashes = False
     session_lock = threading.Lock()
-    login_lock = threading.Lock()
-    login_thread: list[threading.Thread] = []
+    login = auth_service.BackgroundLogin()
+
+    def auth_payload() -> dict:
+        return {**auth_service.auth_status(), "login": login.state()}
 
     def visible_jobs(session: Session) -> list[dict]:
         ids = {m.id for m in session.matches}
@@ -278,7 +288,8 @@ def create_app(queue: JobQueue) -> Flask:
     @app.errorhandler(HTTPException)
     def http_error(e: HTTPException):
         if request.path.startswith("/api/"):
-            return jsonify(errors=[f"Lỗi {e.code}: {e.name}"]), e.code
+            message = HTTP_ERROR_MESSAGES.get(e.code, f"Lỗi {e.code}")
+            return jsonify(errors=[message]), e.code
         return e
 
     @app.after_request
@@ -303,7 +314,7 @@ def create_app(queue: JobQueue) -> Flask:
         session = store.load_session()
         players = store.load_players()
         return jsonify(
-            auth=auth_service.auth_status(),
+            auth=auth_payload(),
             defaults={
                 "tournament": config.DEFAULT_TOURNAMENT,
                 "privacy": config.VIDEO_PRIVACY_STATUS,
@@ -392,26 +403,11 @@ def create_app(queue: JobQueue) -> Flask:
 
     @app.get("/api/auth")
     def auth():
-        return jsonify(auth_service.auth_status())
+        return jsonify(auth_payload())
 
     @app.post("/api/auth/login")
-    def login():
-        with login_lock:
-            if not (login_thread and login_thread[0].is_alive()):
-                thread = threading.Thread(
-                    target=_run_login, name="oauth-login", daemon=True
-                )
-                login_thread[:] = [thread]
-                thread.start()
+    def start_login():
+        login.start()
         return jsonify(ok=True), 202
 
     return app
-
-
-def _run_login() -> None:
-    try:
-        auth_service.authenticate()
-    except Exception:
-        logger.exception("YouTube login failed")
-    finally:
-        auth_service.clear_auth_status_cache()

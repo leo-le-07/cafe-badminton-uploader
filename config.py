@@ -49,7 +49,8 @@ LOGO_PATH = Path(os.getenv("LOGO_PATH", "assets/logo.png"))
 DATA_DIR = Path(os.getenv("DATA_DIR") or "./data").resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-APP_PORT = int(os.getenv("APP_PORT") or 8765)
+DEFAULT_APP_PORT = 8790
+APP_PORT = int(os.getenv("APP_PORT") or DEFAULT_APP_PORT)
 
 DEFAULT_TOURNAMENT = "Cafe Game"
 

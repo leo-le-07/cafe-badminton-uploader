@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from unittest.mock import MagicMock, patch
 from google.auth.exceptions import RefreshError
@@ -178,3 +180,52 @@ class TestAuthStatus:
         auth_service.clear_auth_status_cache()
         with patch("auth_service.get_client", return_value=self.channel_client()):
             assert auth_service.auth_status()["ok"] is True
+
+
+class TestAuthenticateTimeout:
+    @pytest.fixture
+    def flow(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "client_secret.json").write_text("{}", encoding="utf-8")
+        mock_flow = MagicMock()
+        with patch(
+            "auth_service.InstalledAppFlow.from_client_secrets_file",
+            return_value=mock_flow,
+        ):
+            yield mock_flow
+
+    def test_waits_at_most_five_minutes(self, flow):
+        flow.run_local_server.side_effect = RuntimeError("stop here")
+        with pytest.raises(RuntimeError):
+            authenticate()
+        assert flow.run_local_server.call_args.kwargs["timeout_seconds"] == 300
+
+    def test_timeout_raises_login_timeout(self, flow):
+        # google_auth_oauthlib gets no redirect on timeout and then fails
+        # reading the missing request URI.
+        flow.run_local_server.side_effect = AttributeError(
+            "'NoneType' object has no attribute 'replace'"
+        )
+        with pytest.raises(auth_service.LoginTimeoutError):
+            authenticate()
+        assert not Path("token.json").exists()
+
+
+class TestLoginErrorMessage:
+    def test_timeout(self):
+        message = auth_service.login_error_message(auth_service.LoginTimeoutError())
+        assert "Hết thời gian" in message
+
+    def test_missing_client_secret(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FileNotFoundError) as error:
+            authenticate()
+        message = auth_service.login_error_message(error.value)
+        assert "client_secret.json" in message and "Không tìm thấy" in message
+
+    def test_other_error_keeps_its_text(self):
+        message = auth_service.login_error_message(RuntimeError("access_denied"))
+        assert (
+            message.startswith("Đăng nhập YouTube thất bại")
+            and "access_denied" in message
+        )

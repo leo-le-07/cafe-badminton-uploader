@@ -15,8 +15,13 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 API_SERVICE_NAME = "youtube"
 API_VERSION = "v3"
 AUTH_STATUS_TTL_SECONDS = 60.0
+LOGIN_TIMEOUT_SECONDS = 300
 
 logger = get_logger(__name__)
+
+
+class LoginTimeoutError(Exception):
+    """The user did not finish the Google sign-in in time."""
 
 
 def parse_channel_response(response: dict[str, Any]) -> ChannelInfo:
@@ -41,7 +46,16 @@ def authenticate() -> None:
         )
 
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-    credentials = flow.run_local_server(open_browser=True)
+    try:
+        credentials = flow.run_local_server(
+            open_browser=True, timeout_seconds=LOGIN_TIMEOUT_SECONDS
+        )
+    except AttributeError as e:
+        # On timeout google_auth_oauthlib receives no redirect and then fails
+        # reading the missing request URI.
+        raise LoginTimeoutError(
+            f"No sign-in within {LOGIN_TIMEOUT_SECONDS} seconds"
+        ) from e
 
     youtube = build(API_SERVICE_NAME, API_VERSION, credentials=credentials)
     request = youtube.channels().list(mine=True, part="snippet")
@@ -100,3 +114,49 @@ def clear_auth_status_cache() -> None:
     global _status_cache
     with _status_lock:
         _status_cache = None
+
+
+def login_error_message(error: Exception) -> str:
+    """Vietnamese description of a failed authenticate() call."""
+    if isinstance(error, LoginTimeoutError):
+        return (
+            f"Hết thời gian chờ đăng nhập ({LOGIN_TIMEOUT_SECONDS // 60} phút). "
+            "Hãy bấm đăng nhập lại."
+        )
+    if isinstance(error, FileNotFoundError) and CLIENT_SECRET_FILE in str(error):
+        return f"Không tìm thấy file {CLIENT_SECRET_FILE} trong thư mục của ứng dụng."
+    return f"Đăng nhập YouTube thất bại: {str(error) or type(error).__name__}"
+
+
+class BackgroundLogin:
+    """Runs authenticate() in a daemon thread, one attempt at a time, and
+    remembers how the last attempt ended."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._in_progress = False
+        self._error: str | None = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._in_progress:
+                return
+            self._in_progress = True
+            self._error = None
+        threading.Thread(target=self._run, name="oauth-login", daemon=True).start()
+
+    def state(self) -> dict:
+        with self._lock:
+            return {"in_progress": self._in_progress, "error": self._error}
+
+    def _run(self) -> None:
+        error = None
+        try:
+            authenticate()
+        except Exception as e:
+            logger.exception("YouTube login failed")
+            error = login_error_message(e)
+        clear_auth_status_cache()
+        with self._lock:
+            self._error = error
+            self._in_progress = False
