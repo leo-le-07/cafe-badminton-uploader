@@ -187,7 +187,9 @@ def _open_point_errors(
     point = session.open
     if point is None:
         return []
-    where = f"Đoạn đang mở của trận {point.match_id} ({point.source} {_fmt(point.time)})"
+    where = (
+        f"Đoạn đang mở của trận {point.match_id} ({point.source} {_fmt(point.time)})"
+    )
     if point.match_id not in {m.id for m in session.matches}:
         return [f"{where} thuộc trận không có trong phiên làm việc"]
     if point.source not in session.sources:
@@ -241,7 +243,10 @@ def match_problems(match: Match, open_match_id: str | None = None) -> list[str]:
         problems.append("Chưa có đoạn nào")
     if open_match_id == match.id:
         problems.append(OPEN_SEGMENT_PROBLEM)
-    if any("<" in text or ">" in text for text in [*match.team1, *match.team2, match.tournament]):
+    if any(
+        "<" in text or ">" in text
+        for text in [*match.team1, *match.team2, match.tournament]
+    ):
         problems.append(ANGLE_BRACKET_PROBLEM)
     length = len(match_title(match, _DATE_PLACEHOLDER))
     if length > MAX_TITLE_LENGTH:

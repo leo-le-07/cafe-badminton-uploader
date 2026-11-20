@@ -209,8 +209,9 @@ class TestResumableSession:
         youtube = MagicMock()
         youtube.videos.return_value.insert.return_value = request
 
-        with patch("uploader.get_client", return_value=youtube), patch(
-            "uploader._sleep"
+        with (
+            patch("uploader.get_client", return_value=youtube),
+            patch("uploader._sleep"),
         ):
             with pytest.raises(ConnectionError):
                 upload_video_with_idempotency(str(video))
@@ -462,7 +463,9 @@ class TestNetworkRetries:
         video, workspace = video_workspace
         request = MagicMock()
         request.resumable_uri = None
-        outcomes = iter(["start", ConnectionResetError("reset"), TimeoutError(), "done"])
+        outcomes = iter(
+            ["start", ConnectionResetError("reset"), TimeoutError(), "done"]
+        )
 
         def next_chunk(**kwargs):
             outcome = next(outcomes)
@@ -475,9 +478,10 @@ class TestNetworkRetries:
 
         request.next_chunk.side_effect = next_chunk
         youtube = self._youtube(request)
-        with patch("uploader.get_client", return_value=youtube), patch(
-            "uploader._sleep"
-        ) as sleep:
+        with (
+            patch("uploader.get_client", return_value=youtube),
+            patch("uploader._sleep") as sleep,
+        ):
             result = upload_video_with_idempotency(str(video))
 
         assert result.video_id == "vid-retried"
@@ -490,9 +494,10 @@ class TestNetworkRetries:
         request = MagicMock()
         request.resumable_uri = None
         request.next_chunk.side_effect = _http_error(403, "quotaExceeded")
-        with patch("uploader.get_client", return_value=self._youtube(request)), patch(
-            "uploader._sleep"
-        ) as sleep:
+        with (
+            patch("uploader.get_client", return_value=self._youtube(request)),
+            patch("uploader._sleep") as sleep,
+        ):
             with pytest.raises(QuotaExceededError):
                 upload_video_with_idempotency(str(video))
         assert request.next_chunk.call_count == 1

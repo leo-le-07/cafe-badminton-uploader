@@ -273,9 +273,7 @@ def test_put_session_persists_and_validates(client, source):
     assert stored_content() == good
 
 
-def test_put_session_with_stale_revision_is_refused_and_stores_nothing(
-    client, source
-):
+def test_put_session_with_stale_revision_is_refused_and_stores_nothing(client, source):
     first = session(["a.mov"], match("m1", ("a.mov", 0, 10)))
     assert put(client, {**first, "revision": 0}).json["revision"] == 1
     newer = session(["a.mov"], match("m1", ("a.mov", 0, 20)))
@@ -855,9 +853,13 @@ def test_login_can_be_retried_after_a_failure(client, fake_login):
         ("delete", "/api/session"),
     ],
 )
-def test_mutating_routes_need_the_editor_header(bare_client, source, method, path, monkeypatch):
+def test_mutating_routes_need_the_editor_header(
+    bare_client, source, method, path, monkeypatch
+):
     started = []
-    monkeypatch.setattr(auth_service.BackgroundLogin, "start", lambda self: started.append(1))
+    monkeypatch.setattr(
+        auth_service.BackgroundLogin, "start", lambda self: started.append(1)
+    )
     r = getattr(bare_client, method)(path, json={"match_ids": ["m1"]})
     assert r.status_code == 403
     assert "X-Cafe-Editor" in r.json["errors"][0]
@@ -874,7 +876,9 @@ def test_reads_need_no_header(bare_client):
 
 def test_wrong_header_value_is_refused(bare_client, monkeypatch):
     started = []
-    monkeypatch.setattr(auth_service.BackgroundLogin, "start", lambda self: started.append(1))
+    monkeypatch.setattr(
+        auth_service.BackgroundLogin, "start", lambda self: started.append(1)
+    )
     r = bare_client.post("/api/auth/login", headers={"X-Cafe-Editor": "yes"})
     assert r.status_code == 403
     assert started == []

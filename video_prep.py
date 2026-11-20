@@ -15,6 +15,7 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
+
 def _format_team_names(team1: list[str], team2: list[str], separator: str = "/") -> str:
     team1_str = separator.join(team1)
     team2_str = separator.join(team2)
@@ -119,7 +120,9 @@ def score_frame(frame: np.ndarray, prev_frame: np.ndarray | None = None) -> dict
 
     if prev_frame is not None:
         prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-        motion = float(np.mean(np.abs(gray.astype(np.float32) - prev_gray.astype(np.float32))))
+        motion = float(
+            np.mean(np.abs(gray.astype(np.float32) - prev_gray.astype(np.float32)))
+        )
     else:
         motion = 0.0
 
@@ -130,13 +133,20 @@ def _extract_frame_at(video_path: str, timestamp: float) -> np.ndarray | None:
     result = subprocess.run(
         [
             "ffmpeg",
-            "-ss", f"{timestamp:.3f}",
-            "-i", video_path,
-            "-vframes", "1",
-            "-f", "image2",
-            "-vcodec", "mjpeg",
-            "-q:v", "2",
-            "-loglevel", "error",
+            "-ss",
+            f"{timestamp:.3f}",
+            "-i",
+            video_path,
+            "-vframes",
+            "1",
+            "-f",
+            "image2",
+            "-vcodec",
+            "mjpeg",
+            "-q:v",
+            "2",
+            "-loglevel",
+            "error",
             "pipe:1",
         ],
         capture_output=True,
@@ -160,7 +170,9 @@ def sample_timestamps(segments: list[Segment], count: int) -> list[tuple[str, fl
         for seg in segments:
             length = seg.end - seg.start
             if offset <= elapsed + length or seg is segments[-1]:
-                points.append((seg.source, float(seg.start + min(offset - elapsed, length))))
+                points.append(
+                    (seg.source, float(seg.start + min(offset - elapsed, length)))
+                )
                 break
             elapsed += length
     return points
@@ -177,7 +189,9 @@ def select_thumbnail_from_segments(
     raw_scores = []
     prev_frame = None
 
-    for source, timestamp in sample_timestamps(segments, config.CANDIDATE_THUMBNAIL_NUM):
+    for source, timestamp in sample_timestamps(
+        segments, config.CANDIDATE_THUMBNAIL_NUM
+    ):
         frame = _extract_frame_at(str(source_dir / source), timestamp)
         if frame is None:
             logger.warning(f"Could not extract frame at {timestamp:.2f}s from {source}")
@@ -187,7 +201,9 @@ def select_thumbnail_from_segments(
         prev_frame = frame
 
     if not frames:
-        raise ValueError(f"Could not extract any frames from {len(segments)} segment(s)")
+        raise ValueError(
+            f"Could not extract any frames from {len(segments)} segment(s)"
+        )
 
     sharpness_values = [s["sharpness"] for s in raw_scores]
     motion_values = [s["motion"] for s in raw_scores]

@@ -12,7 +12,9 @@ from app.models import Match, match_problems, match_title
 
 MODEL_JS = Path(__file__).resolve().parent.parent / "app" / "static" / "js" / "model.js"
 
-pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+pytestmark = pytest.mark.skipif(
+    shutil.which("node") is None, reason="node not installed"
+)
 
 
 def _m(team1, team2, tournament="Cafe Game", segments=True):
@@ -60,7 +62,10 @@ def test_problems_and_title_are_identical_in_python_and_js():
     )
     js = json.loads(result.stdout)
     python = [
-        [match_problems(Match.from_dict(m), open), match_title(Match.from_dict(m), "2026-11-20")]
+        [
+            match_problems(Match.from_dict(m), open),
+            match_title(Match.from_dict(m), "2026-11-20"),
+        ]
         for m, open in CASES
     ]
     assert js == python

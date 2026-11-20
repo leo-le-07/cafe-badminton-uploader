@@ -51,9 +51,7 @@ HTTP_ERROR_MESSAGES = {
 }
 
 
-STALE_REVISION_MESSAGE = (
-    "Phiên đã được thay đổi ở tab khác. Tải lại trang để tiếp tục."
-)
+STALE_REVISION_MESSAGE = "Phiên đã được thay đổi ở tab khác. Tải lại trang để tiếp tục."
 STALE_REVISION_CODE = "stale_revision"
 
 

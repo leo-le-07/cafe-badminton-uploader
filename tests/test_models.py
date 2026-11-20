@@ -85,7 +85,9 @@ def test_session_roundtrip_keeps_revision_and_open_point():
 
 
 def _with_open(match_id="m1", source="a.mov", time=7.5, matches=None):
-    return Session(["a.mov"], matches or [_m()], "m1", open=OpenPoint(match_id, source, time))
+    return Session(
+        ["a.mov"], matches or [_m()], "m1", open=OpenPoint(match_id, source, time)
+    )
 
 
 def test_valid_open_point():

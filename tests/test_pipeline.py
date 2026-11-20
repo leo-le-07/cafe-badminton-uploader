@@ -166,9 +166,7 @@ def test_each_step_calls_its_function_when_output_missing(ws, job, calls):
     assert calls.names == ["select", "render", "encode", "upload"]
 
 
-def test_upload_step_never_calls_uploader_when_upload_json_has_video_id(
-    ws, job, calls
-):
+def test_upload_step_never_calls_uploader_when_upload_json_has_video_id(ws, job, calls):
     vp = utils.workspace_video_path(ws)
     utils.get_processed_video_path(vp).write_bytes(b"video")
     uploader.save_upload_record(vp, "already", thumbnail_set=False)

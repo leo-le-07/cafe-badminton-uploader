@@ -81,8 +81,10 @@ def probe(path: Path) -> SourceInfo:
     result = subprocess.run(
         [
             "ffprobe",
-            "-v", "error",
-            "-print_format", "json",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
             "-show_format",
             "-show_streams",
             str(path),

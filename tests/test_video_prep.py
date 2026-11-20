@@ -107,7 +107,9 @@ def test_metadata_from_fields_matches_existing_format():
 
 
 def test_metadata_keeps_tournament_as_typed():
-    m = create_metadata_from_fields("ms", ["Leo"], ["Khanh"], "giải CLB mùa đông", "2026-11-20")
+    m = create_metadata_from_fields(
+        "ms", ["Leo"], ["Khanh"], "giải CLB mùa đông", "2026-11-20"
+    )
     assert m.tournament == "giải CLB mùa đông"
     assert m.title == "Leo vs Khanh | giải CLB mùa đông (2026-11-20)"
 

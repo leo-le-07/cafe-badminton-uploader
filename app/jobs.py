@@ -32,7 +32,7 @@ AUTH_MESSAGE = (
 )
 LIVE_UPLOAD_MESSAGE = (
     "Trận {id} đang upload dở lên YouTube (còn phiên upload). Hãy bấm "
-    "\"Thử lại\" để upload nốt trước; đưa về chỉnh sửa lúc này có thể làm "
+    '"Thử lại" để upload nốt trước; đưa về chỉnh sửa lúc này có thể làm '
     "video bị upload hai lần."
 )
 # Steps that call the YouTube API and so stop while any job waits for quota.
@@ -97,8 +97,9 @@ class JobQueue:
 
         # Probing runs ffprobe, so it stays outside the lock.
         recorded_dates = [
-            media_probe.probe(config.INPUT_DIR / match.segments[0].source)
-            .recorded_at[:10]
+            media_probe.probe(config.INPUT_DIR / match.segments[0].source).recorded_at[
+                :10
+            ]
             for match in matches
         ]
 
@@ -129,7 +130,9 @@ class JobQueue:
         with self._lock:
             job = self._jobs[match_id]
             if job.status not in ("error", "waiting_quota"):
-                raise ValueError(f"Trận {match_id} không ở trạng thái lỗi hay chờ quota")
+                raise ValueError(
+                    f"Trận {match_id} không ở trạng thái lỗi hay chờ quota"
+                )
             if job.status == "waiting_quota":
                 # The user says quota is back: let every waiting job try again.
                 self._quota_until.clear()
@@ -204,7 +207,9 @@ class JobQueue:
                 job.status = "queued"
                 job.progress = 0.0
                 store.save_job(job)
-            logger.info(f"{match_id}: step {step} stopped; it will resume on next start")
+            logger.info(
+                f"{match_id}: step {step} stopped; it will resume on next start"
+            )
             return True
         except Exception as e:
             error = e
@@ -223,7 +228,9 @@ class JobQueue:
                 return  # already running
             raise RuntimeError("The previous worker is still finishing a step")
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="job-queue", daemon=True)
+        self._thread = threading.Thread(
+            target=self._loop, name="job-queue", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:

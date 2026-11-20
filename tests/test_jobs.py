@@ -254,7 +254,12 @@ def test_quota_puts_job_in_waiting_and_blocks_later_uploads_only(fake, clock):
     job2 = _status(queue, "m2")
     assert job2["status"] == "waiting_quota"
     assert job2["step"] == "upload"
-    assert fake.steps_of("m2") == ["metadata", "select_thumbnail", "render_thumbnail", "encode"]
+    assert fake.steps_of("m2") == [
+        "metadata",
+        "select_thumbnail",
+        "render_thumbnail",
+        "encode",
+    ]
     assert fake.steps_of("m1").count("upload") == 1
 
 
@@ -354,7 +359,9 @@ def _write_job(id, status, step, queued_at):
             status=status,
             step=step,
             progress=37.0,
-            error="Chờ quota YouTube, sẽ tự thử lại" if status == "waiting_quota" else None,
+            error="Chờ quota YouTube, sẽ tự thử lại"
+            if status == "waiting_quota"
+            else None,
             youtube_link=None,
             queued_at=queued_at,
         )
@@ -830,8 +837,14 @@ def test_archive_id_comes_from_readable_job_file_over_folder_name(fake, clock):
     folder = _archive_job("real-id")
     folder.rename(config.COMPLETED_DIR / "2026-11-19_renamed")
     (config.COMPLETED_DIR / "2026-11-19_renamed" / utils.UPLOADED_FILE).write_text(
-        json.dumps({"video_id": "v", "uploaded_at": "x", "thumbnail_set": True,
-                    "youtube_link": "https://youtu.be/v"}),
+        json.dumps(
+            {
+                "video_id": "v",
+                "uploaded_at": "x",
+                "thumbnail_set": True,
+                "youtube_link": "https://youtu.be/v",
+            }
+        ),
         encoding="utf-8",
     )
 

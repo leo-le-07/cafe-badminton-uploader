@@ -30,6 +30,7 @@ def encode_jpeg(frame: np.ndarray) -> bytes:
 
 # --- score_frame tests ---
 
+
 def test_score_frame_sharp_beats_uniform():
     sharp = make_checkerboard()
     uniform = make_frame(128)
@@ -70,6 +71,7 @@ def test_score_frame_no_motion_identical_frames():
 
 # --- _extract_frame_at tests ---
 
+
 @patch("video_prep.subprocess.run")
 def test_extract_frame_at_returns_frame(mock_run):
     jpeg_bytes = encode_jpeg(make_frame(128))
@@ -108,6 +110,7 @@ def test_extract_frame_at_uses_fast_seeking(mock_run):
 
 
 # --- sample_timestamps tests ---
+
 
 def test_sample_timestamps_stay_inside_kept_segments():
     segs = [Segment("a.mov", 10, 20), Segment("b.mov", 0, 30)]
