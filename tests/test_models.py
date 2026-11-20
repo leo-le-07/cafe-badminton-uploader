@@ -1,9 +1,12 @@
+import video_prep
 from app.models import (
     Match,
     OpenPoint,
     Segment,
     Session,
     match_problems,
+    match_title,
+    title_fields,
     validate_session,
 )
 
@@ -119,3 +122,41 @@ def test_match_with_open_point_is_not_ready():
         "Còn một đoạn đang mở — bấm O để đóng"
     ]
     assert match_problems(_m(), open_match_id="m2") == []
+
+
+# ---- title rules (mirrored in app/static/js/model.js) ---------------------------
+
+
+def test_empty_tournament_uses_the_default_in_the_title():
+    m = _m()
+    m.tournament = "  "
+    assert match_title(m, "2026-11-20") == "Nam vs Tú | Cafe Game (2026-11-20)"
+
+
+def test_title_matches_the_uploaded_title():
+    m = _m(t1=(" Nam ", "", "Hùng"), t2=("Tú",))
+    m.tournament = " Giải Hè "
+    names1, names2, tournament = title_fields(m)
+    assert match_title(m, "2026-11-20") == video_prep.create_title(
+        tournament, names1, names2, "2026-11-20"
+    )
+    assert (names1, tournament) == (["Nam", "Hùng"], "Giải Hè")
+
+
+def test_title_longer_than_100_characters_is_a_problem():
+    long_name = "Nguyễn Văn " + "A" * 70
+    m = _m(t1=(long_name,), t2=("Tú",))
+    n = len(match_title(m, "2026-11-20"))
+    assert n > 100
+    assert match_problems(m) == [f"Tiêu đề dài {n} ký tự, YouTube chỉ nhận tối đa 100"]
+    fits = _m(t1=("A" * (long_name.__len__() - (n - 100)),), t2=("Tú",))
+    assert len(match_title(fits, "2026-11-20")) == 100
+    assert match_problems(fits) == []
+
+
+def test_angle_brackets_in_names_or_tournament_are_a_problem():
+    message = "Tên người chơi và giải không được chứa dấu < hoặc >"
+    assert match_problems(_m(t1=("<Nam>",))) == [message]
+    m = _m()
+    m.tournament = "Cup > 1"
+    assert match_problems(m) == [message]

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv, find_dotenv
 
+import constants
+
 env = os.getenv("APP_ENV", "dev")
 
 # APP_ENV=test reads only the process environment (tests/conftest.py sets
@@ -56,6 +58,6 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_APP_PORT = 8790
 APP_PORT = int(os.getenv("APP_PORT") or DEFAULT_APP_PORT)
 
-DEFAULT_TOURNAMENT = "Cafe Game"
+DEFAULT_TOURNAMENT = constants.DEFAULT_TOURNAMENT
 
 QUOTA_RETRY_HOURS = int(os.getenv("QUOTA_RETRY_HOURS") or 4)

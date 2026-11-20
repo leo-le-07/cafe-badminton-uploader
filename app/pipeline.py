@@ -15,7 +15,7 @@ import utils
 import video_overlay
 import video_prep
 from app import store
-from app.models import JOB_STEPS, Job
+from app.models import JOB_STEPS, Job, title_fields
 from custom_exceptions import VideoAlreadyUploadedError
 from logger import get_logger
 from schemas import UploadedRecord
@@ -54,21 +54,13 @@ def needs_youtube(match_id: str, step: str) -> bool:
     return False
 
 
-def _names(team: list[str]) -> list[str]:
-    return [name.strip() for name in team if name.strip()]
-
-
 def _metadata(job: Job, vp: Path, progress: Progress) -> None:
     path = utils.get_metadata_path(vp)
     if path.exists():
         return
-    match = job.match
+    names1, names2, tournament = title_fields(job.match)
     metadata = video_prep.create_metadata_from_fields(
-        match.match_type,
-        _names(match.team1),
-        _names(match.team2),
-        match.tournament.strip() or config.DEFAULT_TOURNAMENT,
-        job.recorded_date,
+        job.match.match_type, names1, names2, tournament, job.recorded_date
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     video_prep.store(vp, metadata)

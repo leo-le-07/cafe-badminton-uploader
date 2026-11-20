@@ -1,7 +1,7 @@
 import re
 from dataclasses import asdict, dataclass
 
-from constants import MATCH_TYPES
+from constants import DEFAULT_TOURNAMENT, MATCH_TYPES, MAX_TITLE_LENGTH
 
 JOB_STATUSES = ("queued", "running", "waiting_quota", "error", "done")
 JOB_STEPS = (
@@ -204,6 +204,27 @@ def _open_point_errors(
 
 
 OPEN_SEGMENT_PROBLEM = "Còn một đoạn đang mở — bấm O để đóng"
+ANGLE_BRACKET_PROBLEM = "Tên người chơi và giải không được chứa dấu < hoặc >"
+# Any date has this length; the title's length does not depend on which.
+_DATE_PLACEHOLDER = "0000-00-00"
+
+
+def title_fields(match: Match) -> tuple[list[str], list[str], str]:
+    """Names (trimmed, empty ones dropped) and tournament (the default when
+    empty) as they go into the YouTube title and metadata."""
+
+    def names(team: list[str]) -> list[str]:
+        return [name.strip() for name in team if name.strip()]
+
+    tournament = match.tournament.strip() or DEFAULT_TOURNAMENT
+    return names(match.team1), names(match.team2), tournament
+
+
+def match_title(match: Match, date: str) -> str:
+    """The YouTube title, as video_prep.create_title builds it. Mirrored by
+    previewTitle in app/static/js/model.js."""
+    names1, names2, tournament = title_fields(match)
+    return f"{'/'.join(names1)} vs {'/'.join(names2)} | {tournament} ({date})"
 
 
 def match_problems(match: Match, open_match_id: str | None = None) -> list[str]:
@@ -221,4 +242,11 @@ def match_problems(match: Match, open_match_id: str | None = None) -> list[str]:
         problems.append("Chưa có đoạn nào")
     if open_match_id == match.id:
         problems.append(OPEN_SEGMENT_PROBLEM)
+    if any("<" in text or ">" in text for text in [*match.team1, *match.team2, match.tournament]):
+        problems.append(ANGLE_BRACKET_PROBLEM)
+    length = len(match_title(match, _DATE_PLACEHOLDER))
+    if length > MAX_TITLE_LENGTH:
+        problems.append(
+            f"Tiêu đề dài {length} ký tự, YouTube chỉ nhận tối đa {MAX_TITLE_LENGTH}"
+        )
     return problems

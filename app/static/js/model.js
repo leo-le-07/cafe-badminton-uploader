@@ -478,9 +478,13 @@ export function keptDuration(match) {
   return match.segments.reduce((sum, s) => sum + (s.end - s.start), 0);
 }
 
-// Mirrors video_prep.create_title.
+const names = (team) => team.map((n) => n.trim()).filter(Boolean);
+
+// The YouTube title. Mirrors app.models.match_title: names trimmed, empty
+// ones dropped, the default tournament when it is empty.
 export function previewTitle(match, date) {
-  return `${match.team1.join('/')} vs ${match.team2.join('/')} | ${match.tournament} (${date})`;
+  const tournament = match.tournament.trim() || DEFAULT_TOURNAMENT;
+  return `${names(match.team1).join('/')} vs ${names(match.team2).join('/')} | ${tournament} (${date})`;
 }
 
 // Recording date (YYYY-MM-DD) for the title: that of the source holding the
@@ -492,6 +496,8 @@ export function recordedDate(match, session, dates, today) {
 }
 
 export const OPEN_SEGMENT_PROBLEM = 'Còn một đoạn đang mở — bấm O để đóng';
+const ANGLE_BRACKET_PROBLEM = 'Tên người chơi và giải không được chứa dấu < hoặc >';
+const MAX_TITLE_LENGTH = 100;
 
 // Mirrors app.models.match_problems. `openMatchId` is the match that owns
 // the open segment (null when none): it must be closed with O first.
@@ -501,5 +507,13 @@ export function matchProblems(match, openMatchId = null) {
   if (!match.team2.some((n) => n.trim())) problems.push('Thiếu tên người chơi đội 2');
   if (match.segments.length === 0) problems.push('Chưa có đoạn nào');
   if (openMatchId !== null && openMatchId === match.id) problems.push(OPEN_SEGMENT_PROBLEM);
+  if ([...match.team1, ...match.team2, match.tournament].some((t) => /[<>]/.test(t))) {
+    problems.push(ANGLE_BRACKET_PROBLEM);
+  }
+  // Counted in code points like Python's len(); any date has the same length.
+  const length = [...previewTitle(match, '0000-00-00')].length;
+  if (length > MAX_TITLE_LENGTH) {
+    problems.push(`Tiêu đề dài ${length} ký tự, YouTube chỉ nhận tối đa ${MAX_TITLE_LENGTH}`);
+  }
   return problems;
 }

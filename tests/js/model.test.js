@@ -768,3 +768,25 @@ test('matchProblems: trận còn đoạn đang mở chưa upload được', () =
   assert.deepEqual(matchProblems(ok, 'm2'), []);
   assert.deepEqual(matchProblems(ok, null), []);
 });
+
+// ---------------------------------------------------------------- title rules
+
+test('previewTitle: giải để trống thì dùng giải mặc định, tên được cắt khoảng trắng', () => {
+  const m = match('m1', [], { team1: [' Nam ', '', 'Hùng'], team2: ['Tú'], tournament: '  ' });
+  assert.equal(previewTitle(m, '2026-11-20'), 'Nam/Hùng vs Tú | Cafe Game (2026-11-20)');
+});
+
+test('matchProblems: tiêu đề quá 100 ký tự', () => {
+  const seg = [{ source: 'a.mov', start: 0, end: 1 }];
+  const long = match('m1', seg, { team1: ['A'.repeat(71)], team2: ['B'] });
+  assert.deepEqual(matchProblems(long), ['Tiêu đề dài 101 ký tự, YouTube chỉ nhận tối đa 100']);
+  const fits = match('m1', seg, { team1: ['A'.repeat(70)], team2: ['B'] });
+  assert.deepEqual(matchProblems(fits), []);
+});
+
+test('matchProblems: tên hoặc giải có dấu < >', () => {
+  const seg = [{ source: 'a.mov', start: 0, end: 1 }];
+  const message = 'Tên người chơi và giải không được chứa dấu < hoặc >';
+  assert.deepEqual(matchProblems(match('m1', seg, { team1: ['<Nam>'], team2: ['Tú'] })), [message]);
+  assert.deepEqual(matchProblems(match('m1', seg, { team1: ['Nam'], team2: ['Tú'], tournament: 'Cup > 1' })), [message]);
+});
