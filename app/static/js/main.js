@@ -25,6 +25,7 @@ import {
 } from './model.js';
 import { createPlayer, formatTimecode } from './player.js';
 import { createQueue } from './queue.js';
+import { isTransientSaveError, saveRetryDelay } from './save.js';
 import { createTimeline, matchColor } from './timeline.js';
 
 export { matchColor };
@@ -244,8 +245,12 @@ function isTyping(el) {
   return !['range', 'checkbox', 'radio', 'button', 'submit'].includes(el.type);
 }
 
+// Controls whose own Enter/Space action must win over the editor shortcut.
+const ACTIVATABLE = 'button, a[href], input[type=checkbox], [role=button], [role=checkbox]';
+
 function onKey(e) {
   if (!state) return;
+  if (e.isComposing || e.keyCode === 229) return; // the IME owns this key, Esc included
   if (isTyping(document.activeElement)) {
     if (e.key === 'Escape') {
       document.activeElement.blur();
@@ -261,6 +266,11 @@ function onKey(e) {
     return;
   }
   if (mod || e.altKey) return;
+  // Enter/Space on a focused button, link or checkbox activate it natively
+  // (and Space then does not also toggle playback).
+  if (['Enter', 'NumpadEnter', 'Space'].includes(e.code) && e.target instanceof Element && e.target.closest(ACTIVATABLE)) {
+    return;
+  }
 
   const once = !e.repeat;
   const has = state.layout.length > 0; // I/O/N/Delete need a ticked source
@@ -295,13 +305,16 @@ function onKey(e) {
 // ---------------------------------------------------------------- autosave
 
 let saved = null; // last session the server accepted
-let attempted = null; // last session sent, accepted or not
+let attempted = null; // last session the server refused (400/409); never re-sent
 let saveTimer = 0;
 let saving = null; // promise of the save in flight
-let saveError = null; // why `attempted` was refused
+let saveError = null; // error of the last failed save
+let failed = null; // session whose last save failed transiently (network, 5xx)
+let retries = 0; // automatic retries of `failed` so far
 
 function scheduleSave() {
   clearTimeout(saveTimer);
+  retries = 0;
   saveTimer = setTimeout(flushSave, SAVE_DELAY_MS);
   if (!saving) setSaveStatus('saving', 'Đang lưu…');
 }
@@ -315,34 +328,55 @@ async function flushSave(opts) {
     setSaveStatus('ok', 'Đã lưu');
     return;
   }
-  if (state.session === attempted) return; // refused already; wait for a change
+  if (state.session === attempted) return; // refused; wait for a change
   const session = state.session;
-  attempted = session;
   setSaveStatus('saving', 'Đang lưu…');
   saving = api.saveSession(session, opts).then(
     () => {
       saved = session;
       saveError = null;
+      failed = null;
+      retries = 0;
       if (state.session === saved) setSaveStatus('ok', 'Đã lưu');
     },
     (err) => {
       saveError = err;
-      setSaveStatus('error', `Lưu thất bại: ${err.message}`, (err.errors || [err.message]).join('\n'));
+      const detail = (err.errors || [err.message]).join('\n');
+      if (!isTransientSaveError(err)) {
+        attempted = session;
+        setSaveStatus('error', `Lưu thất bại: ${err.message}`, detail);
+        return;
+      }
+      // Transient: try the same session again by itself after a backoff.
+      failed = session;
+      setSaveStatus('error', `Lưu thất bại: ${err.message} · sẽ thử lại`, detail);
+      if (state.session === session) {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(flushSave, saveRetryDelay(retries));
+        retries += 1;
+      }
     },
   );
   await saving;
   saving = null;
-  if (state.session !== attempted) await flushSave(opts);
+  if (state.session !== session) await flushSave(opts);
 }
 
 // Saves now and resolves once the server holds the current session; throws
-// the server's error when it refuses it. Used before enqueue and archive,
-// which act on the stored session.
+// the server's error when the save fails. A refused session (400/409) is not
+// re-sent; a transient failure always gets one fresh attempt here. Used
+// before enqueue and archive, which act on the stored session.
 export async function saveNow() {
+  let tried = false;
   while (state.session !== saved) {
-    if (saving) await saving;
-    else if (state.session === attempted) throw saveError;
-    else await flushSave();
+    if (saving) {
+      await saving;
+      continue;
+    }
+    if (state.session === attempted) throw saveError;
+    if (tried && state.session === failed) throw saveError;
+    tried = true;
+    await flushSave();
   }
 }
 
@@ -362,6 +396,9 @@ function load(data) {
   state = createEditor(boot.session, layout, boot.defaults);
   saved = boot.session;
   attempted = null;
+  failed = null;
+  retries = 0;
+  clearTimeout(saveTimer);
   locked = new Set(boot.jobs.map((j) => j.match.id));
 }
 
@@ -417,6 +454,7 @@ async function start() {
       saveNow,
       onLocked: setLocked,
       onDone: refreshSources,
+      onSignedOut: () => auth.refresh(),
     },
     boot.jobs,
   );

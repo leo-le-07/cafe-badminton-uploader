@@ -5,6 +5,7 @@
 import * as api from './api.js';
 
 const POLL_MS = 2000;
+const FOCUS_CHECK_MS = 60000; // re-check on window focus at most once a minute
 
 // `auth` is the bootstrap/`GET /api/auth` dict {ok, channel, login}.
 // `onChange(auth)` is called whenever a new auth dict arrives.
@@ -81,11 +82,32 @@ export function createAuth(container, auth, onChange) {
     timer = setTimeout(poll, POLL_MS);
   }
 
+  // Fetches the sign-in state again, e.g. after the server said we are
+  // signed out, so an expired token shows the sign-in button.
+  let lastCheck = Date.now();
+  async function refresh() {
+    lastCheck = Date.now();
+    if (timer) return; // an attempt is being followed already
+    try {
+      const next = await api.authStatus();
+      error = '';
+      set(next);
+      if (current.login && current.login.in_progress && !timer) timer = setTimeout(poll, POLL_MS);
+    } catch {
+      // Keep what is shown; the next check tries again.
+    }
+  }
+
+  window.addEventListener('focus', () => {
+    if (Date.now() - lastCheck >= FOCUS_CHECK_MS) refresh();
+  });
+
   render();
   // A reload while an attempt is running keeps following it.
   if (current.login && current.login.in_progress) timer = setTimeout(poll, POLL_MS);
 
   return {
     get: () => current,
+    refresh,
   };
 }

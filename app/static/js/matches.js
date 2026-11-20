@@ -299,12 +299,54 @@ export function createMatches(container, deps) {
     if (card.inputs.includes(e.target)) showSuggestions(card, sideOf(e.target));
   });
 
+  // IME composition: nothing is split or committed while a syllable is being
+  // composed. A blur during composition commits once the composition ends.
+  const composing = new Set(); // chip inputs with a composition in progress
+  const commitAfterComposition = new Set();
+
+  container.addEventListener('compositionstart', (e) => {
+    if (cardOf(e.target)?.inputs.includes(e.target)) composing.add(e.target);
+  });
+
+  container.addEventListener('compositionend', (e) => {
+    const input = e.target;
+    if (!composing.delete(input)) return;
+    const card = cardOf(input);
+    if (!card) return;
+    if (commitAfterComposition.delete(input) || document.activeElement !== input) {
+      commitPending(card, input);
+      return;
+    }
+    splitTyped(card, input);
+    showSuggestions(card, sideOf(input));
+  });
+
+  // Esc throws away the half-typed name; clicking away or Tab keeps it.
+  let discarding = null;
+
   container.addEventListener('focusout', (e) => {
     const card = cardOf(e.target);
     if (!card || !card.inputs.includes(e.target)) return;
-    commitPending(card, e.target);
+    if (discarding === e.target) {
+      discarding = null;
+      e.target.value = '';
+    } else if (composing.has(e.target)) {
+      commitAfterComposition.add(e.target);
+    } else {
+      commitPending(card, e.target);
+    }
     if (sugg && sugg.card === card) hideSuggestions();
   });
+
+  // "Tú," makes a chip and keeps typing in the same input.
+  function splitTyped(card, input) {
+    if (!input.value.includes(',')) return;
+    const parts = input.value.split(',');
+    const rest = parts.pop().trimStart();
+    input.value = rest;
+    const names = splitNames(parts.join(','));
+    if (names.length) addToTeam(card, sideOf(input), names);
+  }
 
   container.addEventListener('input', (e) => {
     const card = cardOf(e.target);
@@ -315,16 +357,8 @@ export function createMatches(container, deps) {
     }
     if (!card.inputs.includes(e.target)) return;
     const input = e.target;
-    const side = sideOf(input);
-    // "Tú," makes a chip and keeps typing in the same input.
-    if (input.value.includes(',')) {
-      const parts = input.value.split(',');
-      const rest = parts.pop().trimStart();
-      input.value = rest;
-      const names = splitNames(parts.join(','));
-      if (names.length) addToTeam(card, side, names);
-    }
-    showSuggestions(card, side);
+    if (!e.isComposing && !composing.has(input)) splitTyped(card, input);
+    showSuggestions(card, sideOf(input));
   });
 
   container.addEventListener('paste', (e) => {
@@ -343,8 +377,13 @@ export function createMatches(container, deps) {
   container.addEventListener('keydown', (e) => {
     const card = cardOf(e.target);
     if (!card || !card.inputs.includes(e.target)) return;
-    if (e.isComposing || e.keyCode === 229) return; // the IME owns this key
+    if (e.isComposing || e.keyCode === 229 || composing.has(e.target)) return; // the IME owns this key
     const input = e.target;
+    if (e.key === 'Escape') {
+      // main.js blurs; the pending text is dropped instead of committed.
+      discarding = input;
+      return;
+    }
     const side = sideOf(input);
     const own = sugg && sugg.card === card && sugg.side === side ? sugg : null;
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && own && own.items.length) {

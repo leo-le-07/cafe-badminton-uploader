@@ -41,7 +41,7 @@ function statusText(job) {
 const safeLink = (url) => (typeof url === 'string' && /^https:\/\//.test(url) ? url : null);
 
 // `els`: {go, note, panel}. `deps`: {getState, getLocked, isSignedIn,
-// saveNow, onLocked(ids), onDone()}.
+// saveNow, onLocked(ids), onDone(), onSignedOut()}.
 export function createQueue(els, deps, initialJobs) {
   const { go, note, panel } = els;
   let jobs = [];
@@ -265,6 +265,8 @@ export function createQueue(els, deps, initialJobs) {
       applied = ++seq; // older polls in flight do not know these jobs yet
     } catch (err) {
       goError = { text: err.message, detail: (err.errors || [err.message]).join('\n'), n: null };
+      // The server says we are signed out: show the sign-in button again.
+      if (err.status === 409 && /đăng nhập/.test(err.message)) deps.onSignedOut();
     } finally {
       busy = false;
       pending.clear();
