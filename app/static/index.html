@@ -1,1 +1,59 @@
-<!doctype html><meta charset="utf-8"><title>Cafe Badminton</title><p>Trình chỉnh sửa trận đấu đang được xây dựng.</p>
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Cafe Badminton</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <b>Cafe Badminton</b>
+    <span class="pill" id="auth-pill">…</span>
+    <span class="pill" id="defaults-pill"></span>
+    <div class="spacer"></div>
+    <span class="pill" id="save-pill"></span>
+  </div>
+
+  <aside>
+    <h4>Video trong input/</h4>
+    <div id="sources"></div>
+    <p class="hint">Tick nhiều file để nối chúng thành một timeline liên tục theo thứ tự quay. Đây là cách ghép 2 recording của cùng một trận.</p>
+  </aside>
+
+  <main>
+    <div class="player" id="player">
+      <div class="stage" id="stage"></div>
+      <div class="placeholder">Chưa chọn video nào</div>
+      <div class="tc" id="tc"></div>
+      <div class="state off" id="hold">○ Không giữ</div>
+    </div>
+
+    <div id="timeline"></div>
+
+    <div class="keys">
+      <span class="big"><kbd>I</kbd> bắt đầu giữ</span>
+      <span class="big"><kbd>O</kbd> ngừng giữ</span>
+      <span class="big"><kbd>N</kbd> sang trận mới</span>
+      <span><kbd>Space</kbd> phát/dừng</span>
+      <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> lùi/dừng/tới (bấm L nhiều lần: 2×, 4×, 8×)</span>
+      <span><kbd>←</kbd><kbd>→</kbd> 1 giây</span>
+      <span><kbd>⇧←</kbd><kbd>⇧→</kbd> 10 giây</span>
+      <span><kbd>,</kbd><kbd>.</kbd> 1 frame</span>
+      <span><kbd>+</kbd><kbd>−</kbd> zoom</span>
+      <span><kbd>⌘Z</kbd> hoàn tác</span>
+      <span><kbd>Enter</kbd> nhập tên người chơi</span>
+      <span><kbd>Delete</kbd> xoá đoạn dưới con trỏ</span>
+    </div>
+  </main>
+
+  <!-- Right column: match cards, upload button and queue (Task 11). -->
+  <div class="right" id="right">
+    <div class="matches" id="matches"></div>
+    <div id="queue"></div>
+  </div>
+</div>
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

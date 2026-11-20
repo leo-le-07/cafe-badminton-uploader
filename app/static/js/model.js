@@ -94,12 +94,21 @@ function toSegments(layout, start, end) {
   return pieces;
 }
 
-// Every closed segment in global time, sorted by start.
+// A source can be in the session without being on the timeline: its file is
+// missing on disk (or unreadable), so its duration is unknown. Its segments
+// stay in the session untouched and every operation skips them.
+function entryOrNull(layout, name) {
+  return layout.find((e) => e.name === name) ?? null;
+}
+
+// Every closed segment on the timeline in global time, sorted by start.
 function placed(session, layout) {
   const all = [];
   for (const m of session.matches) {
     m.segments.forEach((seg, segIndex) => {
-      const offset = entryNamed(layout, seg.source).offset;
+      const e = entryOrNull(layout, seg.source);
+      if (!e) return;
+      const offset = e.offset;
       all.push({ matchId: m.id, segIndex, start: offset + seg.start, end: offset + seg.end });
     });
   }
@@ -141,9 +150,14 @@ function selectedMatch(state) {
   return findMatch(state.session, state.session.selected_match_id);
 }
 
+// Segments on the timeline sorted by global start; segments of sources not on
+// the timeline follow in their stored order.
 function sortSegments(layout, segments) {
-  const key = (seg) => toGlobal(layout, seg.source, seg.start);
-  return [...segments].sort((a, b) => key(a) - key(b));
+  const key = (seg) => {
+    const e = entryOrNull(layout, seg.source);
+    return e ? e.offset + seg.start : Infinity;
+  };
+  return [...segments].sort((a, b) => key(a) - key(b) || 0);
 }
 
 function withSegments(state, session, matchId, segments) {
@@ -277,8 +291,8 @@ export function moveEdge(state, matchId, segIndex, edge, t, locked = NO_LOCKS) {
   if (locked.has(matchId)) return state;
   const m = findMatch(state.session, matchId);
   const seg = m && m.segments[segIndex];
-  if (!seg) return state;
-  const e = entryNamed(state.layout, seg.source);
+  const e = seg && entryOrNull(state.layout, seg.source);
+  if (!e) return state;
   const local = roundLocal(e, t - e.offset);
   // Neighbours in the same source, compared in local time to avoid drift.
   const others = state.session.matches
@@ -349,6 +363,39 @@ export function removeSource(state, name, locked = NO_LOCKS) {
   }
   return commit(state, {
     session: { sources: session.sources.filter((s) => s !== name), matches, selected_match_id: selected },
+    open,
+    layout: newLayout,
+  });
+}
+
+// Puts source `name` on the timeline. `infos` is the caller's full list of
+// source infos ({name, duration, fps, ...}) already in recording order, such
+// as the server's source list; the timeline keeps the relative order of
+// `infos`, so the new file lands between the files recorded before and after
+// it. Sources in the session that are not on the timeline (missing on disk)
+// stay in `session.sources` after the placed ones. Segments are local to
+// their file and do not change; an open segment keeps its place in its file.
+// Undo removes the source again.
+export function addSource(state, name, infos) {
+  const { session, layout } = state;
+  const info = infos.find((s) => s.name === name);
+  if (session.sources.includes(name) || !info || !(info.duration > 0)) return state;
+  const placedNames = new Set([...layout.map((e) => e.name), name]);
+  const known = new Map(layout.map((e) => [e.name, e]));
+  known.set(name, info);
+  const ordered = infos.filter((s) => placedNames.has(s.name)).map((s) => known.get(s.name));
+  // Placed sources the caller did not list keep their place at the end.
+  for (const e of layout) if (!ordered.includes(e)) ordered.push(e);
+  const newLayout = buildLayout(ordered);
+  const offTimeline = session.sources.filter((s) => !placedNames.has(s));
+
+  let open = state.open;
+  if (open && layout.length > 0) {
+    const at = toLocal(layout, open.start);
+    open = { ...open, start: toGlobal(newLayout, at.name, at.time) };
+  }
+  return commit(state, {
+    session: { ...session, sources: [...newLayout.map((e) => e.name), ...offTimeline] },
     open,
     layout: newLayout,
   });

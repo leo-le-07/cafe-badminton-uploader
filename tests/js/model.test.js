@@ -16,6 +16,7 @@ import {
   moveEdge,
   updateMatch,
   removeSource,
+  addSource,
   undo,
   segmentsOnTimeline,
   keptDuration,
@@ -492,4 +493,109 @@ test('moveEdge giữ ít nhất 1 frame khi mép kia nằm ở cuối file lệc
   const seg = moveEdge(s, 'm1', 0, 'start', 60).session.matches[0].segments[0];
   assert.equal(seg.start, 1497 / 29.97);
   assert.ok(seg.end - seg.start >= 1 / 29.97);
+});
+
+// ---------------------------------------------------------------- addSource
+
+const INFOS = [
+  { name: 'a.mov', duration: 100, fps: 30, recorded_at: '2026-11-20T19:00:00+07:00' },
+  { name: 'c.mov', duration: 20, fps: 25, recorded_at: '2026-11-20T19:30:00+07:00' },
+  { name: 'b.mov', duration: 50, fps: 30, recorded_at: '2026-11-20T20:00:00+07:00' },
+];
+
+test('addSource chèn nguồn theo thứ tự danh sách đã sắp và giữ lịch sử hoàn tác', () => {
+  let s = editor({
+    sources: ['a.mov', 'b.mov'],
+    matches: [match('m1', [{ source: 'b.mov', start: 0, end: 10 }])],
+    selected_match_id: 'm1',
+  });
+  s = markIn(s, 120);
+  s = deepFreeze(s);
+  const r = addSource(s, 'c.mov', INFOS);
+  assert.deepEqual(r.session.sources, ['a.mov', 'c.mov', 'b.mov']);
+  assert.deepEqual(r.layout, [
+    { name: 'a.mov', offset: 0, duration: 100, fps: 30 },
+    { name: 'c.mov', offset: 100, duration: 20, fps: 25 },
+    { name: 'b.mov', offset: 120, duration: 50, fps: 30 },
+  ]);
+  // Segments are local to their file, so they do not move in the session…
+  assert.deepEqual(r.session.matches, s.session.matches);
+  // …and the open segment keeps its place in b.mov.
+  assert.deepEqual(r.open, { matchId: 'm1', start: 140 });
+  assert.equal(r.undo.length, s.undo.length + 1);
+  const u = undo(r);
+  assert.deepEqual(u.session, s.session);
+  assert.deepEqual(u.layout, s.layout);
+  assert.deepEqual(u.open, s.open);
+});
+
+test('addSource vào phiên rỗng và bỏ qua nguồn đã có hoặc không có thời lượng', () => {
+  const s = editor({ sources: [], matches: [], selected_match_id: null }, []);
+  const r = addSource(s, 'b.mov', INFOS);
+  assert.deepEqual(r.session.sources, ['b.mov']);
+  assert.deepEqual(r.layout, [{ name: 'b.mov', offset: 0, duration: 50, fps: 30 }]);
+  assert.equal(addSource(r, 'b.mov', INFOS), r);
+  assert.equal(addSource(r, 'zzz.mov', INFOS), r);
+  assert.equal(addSource(r, 'x.mov', [{ name: 'x.mov', missing: true }]), r);
+});
+
+// ---------------------------------------------------------------- missing sources
+
+// a.mov and b.mov on disk; gone.mov is in the session but not on the timeline.
+function withMissing() {
+  return editor(
+    {
+      sources: ['a.mov', 'gone.mov', 'b.mov'],
+      matches: [
+        match('m1', [
+          { source: 'a.mov', start: 10, end: 20 },
+          { source: 'gone.mov', start: 5, end: 8 },
+        ]),
+        match('m2', [{ source: 'gone.mov', start: 0, end: 3 }]),
+      ],
+      selected_match_id: 'm1',
+    },
+    SOURCES,
+  );
+}
+
+test('nguồn bị thiếu trên đĩa không làm hỏng editor và đoạn của nó giữ nguyên', () => {
+  const s = withMissing();
+  assert.deepEqual(segmentsOnTimeline(s, 50), [
+    { matchId: 'm1', segIndex: 0, start: 10, end: 20, open: false },
+  ]);
+  // Marking, moving and deleting still work and leave gone.mov untouched.
+  let r = markIn(s, 30, ids());
+  r = markOut(r, 40);
+  assert.deepEqual(r.session.matches[0].segments, [
+    { source: 'a.mov', start: 10, end: 20 },
+    { source: 'a.mov', start: 30, end: 40 },
+    { source: 'gone.mov', start: 5, end: 8 },
+  ]);
+  assert.deepEqual(r.session.matches[1], s.session.matches[1]);
+  assert.equal(moveEdge(s, 'm1', 1, 'end', 50), s);
+  assert.equal(deleteSegmentAt(s, 6), s);
+  const d = deleteSegmentAt(s, 15);
+  assert.deepEqual(d.session.matches[0].segments, [{ source: 'gone.mov', start: 5, end: 8 }]);
+  const n = newMatch(markIn(s, 60), 70, () => 'm3');
+  assert.deepEqual(n.session.matches[0].segments.at(-1), { source: 'gone.mov', start: 5, end: 8 });
+  assert.equal(n.session.selected_match_id, 'm3');
+});
+
+test('removeSource bỏ được nguồn bị thiếu trên đĩa', () => {
+  const r = removeSource(withMissing(), 'gone.mov');
+  assert.deepEqual(r.session.sources, ['a.mov', 'b.mov']);
+  assert.deepEqual(
+    r.session.matches.map((m) => [m.id, m.segments]),
+    [['m1', [{ source: 'a.mov', start: 10, end: 20 }]]],
+  );
+  assert.deepEqual(r.layout, buildLayout(SOURCES));
+});
+
+test('addSource giữ nguồn bị thiếu trong phiên', () => {
+  const s = withMissing();
+  const infos = [...SOURCES.slice(0, 1), { name: 'c.mov', duration: 20, fps: 25 }, SOURCES[1]];
+  const r = addSource(s, 'c.mov', infos);
+  assert.deepEqual(r.session.sources, ['a.mov', 'c.mov', 'b.mov', 'gone.mov']);
+  assert.deepEqual(r.layout.map((e) => e.name), ['a.mov', 'c.mov', 'b.mov']);
 });
