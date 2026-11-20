@@ -1,6 +1,12 @@
 from schemas import MatchMetadata, UploadedRecord
-from custom_exceptions import VideoAlreadyUploadedError
+from custom_exceptions import (
+    AuthRequiredError,
+    QuotaExceededError,
+    VideoAlreadyUploadedError,
+)
 from dataclasses import asdict
+from google.auth.exceptions import RefreshError
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from auth_service import get_client
 import config
@@ -13,59 +19,69 @@ from utils import (
     get_thumbnail_path,
     get_upload_record_path,
     get_uploaded_record,
-    get_metadata_path,
     get_processed_video_path,
+    get_workspace_dir,
 )
 
 CHUNK_SIZE_MB = 1024 * 1024 * 16  # 16MB
+UPLOAD_SESSION_FILE = "upload_session.json"
+
+QUOTA_ERROR_REASONS = {"quotaExceeded", "rateLimitExceeded", "uploadLimitExceeded"}
+EXPIRED_SESSION_STATUSES = {404, 410}
 
 
-def get_videos_ready_for_upload(video_paths: list[Path]) -> list[Path]:
-    result = []
-
-    for video_path in video_paths:
-        upload_record = get_uploaded_record(video_path)
-        if upload_record:
-            continue
-
-        metadata_path = get_metadata_path(video_path)
-        thumbnail_path = get_thumbnail_path(video_path)
-        if not metadata_path.exists() or not thumbnail_path.exists():
-            continue
-
-        try:
-            metadata = get_metadata(video_path)
-            if not metadata:
-                continue
-        except (FileNotFoundError, json.JSONDecodeError):
-            continue
-
-        result.append(video_path)
-
-    return result
+def is_quota_error(err: HttpError) -> bool:
+    if err.status_code == 429:
+        return True
+    try:
+        errors = json.loads(err.content.decode("utf-8"))["error"]["errors"]
+        reasons = {e.get("reason") for e in errors}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return False
+    return bool(reasons & QUOTA_ERROR_REASONS)
 
 
-def upload(
-    youtube_client: Any,
-    video_path: Path,
-    metadata: MatchMetadata,
-    progress_callback: Callable[[float], None] | None = None,
-) -> str:
-    category = metadata.category
-    description = metadata.description
-    title = metadata.title
+def get_upload_session_path(video_path: Path) -> Path:
+    return get_workspace_dir(video_path) / UPLOAD_SESSION_FILE
 
+
+def load_upload_session(session_path: Path, file_size: int) -> str | None:
+    """Return the saved resumable URI if it belongs to a file of this size."""
+    try:
+        session = json.loads(session_path.read_text(encoding="utf-8"))
+        resumable_uri = session["resumable_uri"]
+        saved_size = session["file_size"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if saved_size != file_size or not isinstance(resumable_uri, str):
+        return None
+    return resumable_uri
+
+
+def save_upload_session(session_path: Path, resumable_uri: str, file_size: int) -> None:
+    with open(session_path, "w", encoding="utf-8") as f:
+        json.dump({"resumable_uri": resumable_uri, "file_size": file_size}, f)
+
+
+def _youtube_client() -> Any:
+    try:
+        return get_client()
+    except RuntimeError as e:
+        raise AuthRequiredError(str(e)) from e
+
+
+def _insert_request(youtube_client: Any, video_path: Path, metadata: MatchMetadata):
     media = MediaFileUpload(
         video_path, mimetype="video/*", resumable=True, chunksize=CHUNK_SIZE_MB
     )
 
-    request = youtube_client.videos().insert(
+    return youtube_client.videos().insert(
         part="snippet,status,contentDetails",
         body={
             "snippet": {
-                "categoryId": str(category),
-                "description": description,
-                "title": title,
+                "categoryId": str(metadata.category),
+                "description": metadata.description,
+                "title": metadata.title,
             },
             "status": {
                 "privacyStatus": config.VIDEO_PRIVACY_STATUS,
@@ -75,15 +91,64 @@ def upload(
         media_body=media,
     )
 
-    total_size = video_path.stat().st_size
+
+def _send_chunks(
+    request: Any,
+    total_size: int,
+    session_path: Path | None,
+    progress_callback: Callable[[float], None] | None,
+) -> dict:
+    saved_uri = request.resumable_uri
     response = None
 
     while response is None:
         status, response = request.next_chunk()
+        if (
+            response is None
+            and session_path is not None
+            and request.resumable_uri != saved_uri
+        ):
+            # Persist as soon as the session exists so a restart can resume it
+            # instead of creating a second video.
+            saved_uri = request.resumable_uri
+            save_upload_session(session_path, saved_uri, total_size)
         if status and progress_callback:
             current_progress = int(status.progress() * total_size)
             progress_percent = (current_progress / total_size) * 100
             progress_callback(progress_percent)
+
+    return response
+
+
+def upload(
+    youtube_client: Any,
+    video_path: Path,
+    metadata: MatchMetadata,
+    progress_callback: Callable[[float], None] | None = None,
+    session_path: Path | None = None,
+) -> str:
+    total_size = video_path.stat().st_size
+    saved_uri = load_upload_session(session_path, total_size) if session_path else None
+
+    response = None
+    if saved_uri:
+        request = _insert_request(youtube_client, video_path, metadata)
+        # googleapiclient asks the server for the received byte range (empty PUT)
+        # before sending the next chunk when the request is in error state.
+        request.resumable_uri = saved_uri
+        request._in_error_state = True
+        try:
+            response = _send_chunks(
+                request, total_size, session_path, progress_callback
+            )
+        except HttpError as e:
+            if e.status_code not in EXPIRED_SESSION_STATUSES:
+                raise
+            session_path.unlink(missing_ok=True)
+
+    if response is None:
+        request = _insert_request(youtube_client, video_path, metadata)
+        response = _send_chunks(request, total_size, session_path, progress_callback)
 
     video_id = response.get("id")
     if not video_id:
@@ -122,9 +187,24 @@ def upload_video_with_idempotency(
     processed_path = get_processed_video_path(path)
     upload_path = processed_path if processed_path.exists() else path
 
-    youtube_client = get_client()
-    video_id = upload(youtube_client, upload_path, metadata, heartbeat_callback)
+    session_path = get_upload_session_path(path)
+    youtube_client = _youtube_client()
+    try:
+        video_id = upload(
+            youtube_client,
+            upload_path,
+            metadata,
+            heartbeat_callback,
+            session_path=session_path,
+        )
+    except RefreshError as e:
+        raise AuthRequiredError(str(e)) from e
+    except HttpError as e:
+        if is_quota_error(e):
+            raise QuotaExceededError(str(e)) from e
+        raise
     save_upload_record(path, video_id, thumbnail_set=False)
+    session_path.unlink(missing_ok=True)
 
     uploaded_record = get_uploaded_record(path)
     if not uploaded_record:
@@ -143,43 +223,17 @@ def set_thumbnail_for_video(video_path: str) -> None:
     if upload_record.thumbnail_set:
         return
 
-    youtube_client = get_client()
+    youtube_client = _youtube_client()
     thumbnail_path = get_thumbnail_path(path)
 
     if not thumbnail_path.exists():
         raise FileNotFoundError(f"Thumbnail not found: {thumbnail_path}")
 
-    set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)
+    try:
+        set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)
+    except RefreshError as e:
+        raise AuthRequiredError(str(e)) from e
     save_upload_record(path, upload_record.video_id, thumbnail_set=True)
-
-
-def update_video_visibility_for_video(video_path: str) -> None:
-    path = Path(video_path)
-    upload_record = get_uploaded_record(path)
-    if not upload_record or not upload_record.video_id:
-        raise RuntimeError(
-            f"Video not uploaded yet. Cannot update visibility for {path.name}"
-        )
-
-    privacy_status = config.VIDEO_PRIVACY_STATUS
-    youtube_client = get_client()
-
-    request = youtube_client.videos().update(
-        part="status",
-        body={
-            "id": upload_record.video_id,
-            "status": {
-                "privacyStatus": privacy_status,
-                "selfDeclaredMadeForKids": False,
-            },
-        },
-    )
-
-    response = request.execute()
-    if "error" in response:
-        raise RuntimeError(
-            f"Failed to update video visibility: {response.get('error', {})}"
-        )
 
 
 def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool) -> None:

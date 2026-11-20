@@ -16,3 +16,11 @@ class MissingThumbnailDataError(Exception):
 
 class ThumbnailSelectionError(Exception):
     pass
+
+
+class QuotaExceededError(Exception):
+    pass
+
+
+class AuthRequiredError(Exception):
+    pass

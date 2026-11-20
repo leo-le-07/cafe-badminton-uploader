@@ -2,16 +2,23 @@ import json
 from dataclasses import asdict
 from unittest.mock import MagicMock, patch
 
+import httplib2
 import pytest
+from google.auth.exceptions import RefreshError
+from googleapiclient.errors import HttpError
 
 import config
-from custom_exceptions import VideoAlreadyUploadedError
+from custom_exceptions import (
+    AuthRequiredError,
+    QuotaExceededError,
+    VideoAlreadyUploadedError,
+)
 from schemas import MatchMetadata, UploadedRecord
 from uploader import (
-    get_videos_ready_for_upload,
+    UPLOAD_SESSION_FILE,
+    is_quota_error,
     save_upload_record,
     set_thumbnail_for_video,
-    update_video_visibility_for_video,
     upload_video_with_idempotency,
 )
 from utils import get_uploaded_record
@@ -32,6 +39,32 @@ _UPLOADED_RECORD = UploadedRecord(
     thumbnail_set=False,
     youtube_link="https://youtu.be/vid123",
 )
+
+
+def _http_error(status: int, reason: str) -> HttpError:
+    body = {
+        "error": {
+            "code": status,
+            "message": reason,
+            "errors": [{"domain": "youtube", "reason": reason, "message": reason}],
+        }
+    }
+    return HttpError(
+        httplib2.Response({"status": status}), json.dumps(body).encode("utf-8")
+    )
+
+
+def _progress(fraction: float) -> MagicMock:
+    status = MagicMock()
+    status.progress.return_value = fraction
+    return status
+
+
+def _write_session(workspace, resumable_uri: str, file_size: int) -> None:
+    (workspace / UPLOAD_SESSION_FILE).write_text(
+        json.dumps({"resumable_uri": resumable_uri, "file_size": file_size}),
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture
@@ -72,29 +105,6 @@ class TestSaveUploadRecord:
         record = get_uploaded_record(video)
         assert record is not None
         assert record.thumbnail_set is True
-
-
-class TestGetVideosReadyForUpload:
-    def test_excludes_path_with_existing_upload_record(self, video_workspace):
-        video, workspace = video_workspace
-        (workspace / "thumbnail.jpg").write_bytes(b"img")
-        save_upload_record(video, "vid123", thumbnail_set=False)
-        assert get_videos_ready_for_upload([video]) == []
-
-    def test_excludes_path_with_missing_metadata(self, video_workspace):
-        video, workspace = video_workspace
-        (workspace / "metadata.json").unlink()
-        (workspace / "thumbnail.jpg").write_bytes(b"img")
-        assert get_videos_ready_for_upload([video]) == []
-
-    def test_excludes_path_with_missing_thumbnail(self, video_workspace):
-        video, _ = video_workspace
-        assert get_videos_ready_for_upload([video]) == []
-
-    def test_includes_path_with_metadata_and_thumbnail(self, video_workspace):
-        video, workspace = video_workspace
-        (workspace / "thumbnail.jpg").write_bytes(b"img")
-        assert get_videos_ready_for_upload([video]) == [video]
 
 
 class TestUploadVideoWithIdempotency:
@@ -167,32 +177,200 @@ class TestSetThumbnailForVideo:
         assert record.thumbnail_set is True
 
 
-class TestUpdateVideoVisibilityForVideo:
-    def test_raises_if_no_upload_record(self, video_workspace):
-        video, _ = video_workspace
-        with pytest.raises(RuntimeError, match="not uploaded"):
-            update_video_visibility_for_video(str(video))
+def test_is_quota_error():
+    assert is_quota_error(_http_error(429, "rateLimitExceeded"))
+    assert is_quota_error(_http_error(403, "quotaExceeded"))
+    assert is_quota_error(_http_error(403, "uploadLimitExceeded"))
+    assert not is_quota_error(_http_error(403, "forbidden"))
+    assert not is_quota_error(_http_error(500, "backendError"))
 
-    def test_calls_videos_update(self, video_workspace):
-        video, workspace = video_workspace
-        (workspace / "upload.json").write_text(
-            json.dumps(asdict(_UPLOADED_RECORD)), encoding="utf-8"
-        )
-        mock_youtube = MagicMock()
-        mock_youtube.videos.return_value.update.return_value.execute.return_value = {}
-        with patch("uploader.get_client", return_value=mock_youtube):
-            update_video_visibility_for_video(str(video))
-        mock_youtube.videos.return_value.update.assert_called_once()
 
-    def test_raises_on_error_response(self, video_workspace):
+class TestResumableSession:
+    def test_session_uri_is_saved_before_upload_finishes(self, video_workspace):
         video, workspace = video_workspace
-        (workspace / "upload.json").write_text(
-            json.dumps(asdict(_UPLOADED_RECORD)), encoding="utf-8"
-        )
-        mock_youtube = MagicMock()
-        mock_youtube.videos.return_value.update.return_value.execute.return_value = {
-            "error": {"message": "Quota exceeded"}
+        request = MagicMock()
+        request.resumable_uri = None
+
+        def first_chunk():
+            request.resumable_uri = "https://up/1"
+            return _progress(0.5), None
+
+        calls = iter([first_chunk, ConnectionError("dropped")])
+
+        def next_chunk():
+            step = next(calls)
+            if isinstance(step, Exception):
+                raise step
+            return step()
+
+        request.next_chunk.side_effect = next_chunk
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value = request
+
+        with patch("uploader.get_client", return_value=youtube):
+            with pytest.raises(ConnectionError):
+                upload_video_with_idempotency(str(video))
+
+        session = json.loads((workspace / UPLOAD_SESSION_FILE).read_text())
+        assert session == {
+            "resumable_uri": "https://up/1",
+            "file_size": video.stat().st_size,
         }
-        with patch("uploader.get_client", return_value=mock_youtube):
-            with pytest.raises(RuntimeError, match="Failed to update video visibility"):
-                update_video_visibility_for_video(str(video))
+        assert not (workspace / "upload.json").exists()
+
+    def test_restart_resumes_saved_session_instead_of_starting_new(
+        self, video_workspace
+    ):
+        video, workspace = video_workspace
+        _write_session(workspace, "https://up/saved", video.stat().st_size)
+        request = MagicMock()
+        seen = {}
+
+        def next_chunk():
+            seen["uri"] = request.resumable_uri
+            seen["in_error_state"] = request._in_error_state
+            return None, {"id": "resumed_vid"}
+
+        request.next_chunk.side_effect = next_chunk
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value = request
+
+        with patch("uploader.get_client", return_value=youtube):
+            result = upload_video_with_idempotency(str(video))
+
+        assert seen == {"uri": "https://up/saved", "in_error_state": True}
+        assert youtube.videos.return_value.insert.call_count == 1
+        assert result.video_id == "resumed_vid"
+        assert json.loads((workspace / "upload.json").read_text())["video_id"] == (
+            "resumed_vid"
+        )
+        assert not (workspace / UPLOAD_SESSION_FILE).exists()
+
+    def test_expired_session_falls_back_to_fresh_upload(self, video_workspace):
+        video, workspace = video_workspace
+        _write_session(workspace, "https://up/expired", video.stat().st_size)
+        old_request = MagicMock()
+        old_request.next_chunk.side_effect = _http_error(404, "notFound")
+        new_request = MagicMock()
+        seen = {}
+
+        def fresh_chunk():
+            seen["session_exists"] = (workspace / UPLOAD_SESSION_FILE).exists()
+            seen["uri"] = new_request.resumable_uri
+            return None, {"id": "fresh_vid"}
+
+        new_request.next_chunk.side_effect = fresh_chunk
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.side_effect = [old_request, new_request]
+
+        with patch("uploader.get_client", return_value=youtube):
+            result = upload_video_with_idempotency(str(video))
+
+        assert youtube.videos.return_value.insert.call_count == 2
+        assert seen["session_exists"] is False
+        assert seen["uri"] != "https://up/expired"
+        assert result.video_id == "fresh_vid"
+        assert not (workspace / UPLOAD_SESSION_FILE).exists()
+
+    def test_session_for_different_file_size_is_ignored(self, video_workspace):
+        video, workspace = video_workspace
+        _write_session(workspace, "https://up/other", video.stat().st_size + 1)
+        request = MagicMock()
+        seen = {}
+
+        def next_chunk():
+            seen["uri"] = request.resumable_uri
+            seen["in_error_state"] = request._in_error_state
+            return None, {"id": "fresh_vid"}
+
+        request.next_chunk.side_effect = next_chunk
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value = request
+
+        with patch("uploader.get_client", return_value=youtube):
+            result = upload_video_with_idempotency(str(video))
+
+        assert seen["uri"] != "https://up/other"
+        assert seen["in_error_state"] is not True
+        assert result.video_id == "fresh_vid"
+
+    def test_session_is_matched_against_processed_video_size(self, video_workspace):
+        video, workspace = video_workspace
+        processed = workspace / "processed.mov"
+        processed.write_bytes(b"processed video" * 300)
+        _write_session(workspace, "https://up/processed", processed.stat().st_size)
+        request = MagicMock()
+        seen = {}
+
+        def next_chunk():
+            seen["uri"] = request.resumable_uri
+            return None, {"id": "proc_vid"}
+
+        request.next_chunk.side_effect = next_chunk
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value = request
+
+        with patch("uploader.get_client", return_value=youtube):
+            upload_video_with_idempotency(str(video))
+
+        assert seen["uri"] == "https://up/processed"
+
+
+class TestErrorClassification:
+    def test_quota_http_error_becomes_quota_exceeded(self, video_workspace):
+        video, workspace = video_workspace
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value.next_chunk.side_effect = (
+            _http_error(403, "uploadLimitExceeded")
+        )
+        with patch("uploader.get_client", return_value=youtube):
+            with pytest.raises(QuotaExceededError):
+                upload_video_with_idempotency(str(video))
+        assert not (workspace / "upload.json").exists()
+
+    def test_other_http_error_propagates_unchanged(self, video_workspace):
+        video, _ = video_workspace
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value.next_chunk.side_effect = (
+            _http_error(500, "backendError")
+        )
+        with patch("uploader.get_client", return_value=youtube):
+            with pytest.raises(HttpError):
+                upload_video_with_idempotency(str(video))
+
+    def test_missing_token_becomes_auth_required(self, video_workspace):
+        video, _ = video_workspace
+        with patch(
+            "uploader.get_client",
+            side_effect=RuntimeError("OAuth token not found. Run auth setup."),
+        ):
+            with pytest.raises(AuthRequiredError):
+                upload_video_with_idempotency(str(video))
+
+    def test_revoked_token_becomes_auth_required(self, video_workspace):
+        video, _ = video_workspace
+        youtube = MagicMock()
+        youtube.videos.return_value.insert.return_value.next_chunk.side_effect = (
+            RefreshError("invalid_grant: Token has been expired or revoked.")
+        )
+        with patch("uploader.get_client", return_value=youtube):
+            with pytest.raises(AuthRequiredError):
+                upload_video_with_idempotency(str(video))
+
+    def test_set_thumbnail_maps_auth_errors(self, video_workspace):
+        video, workspace = video_workspace
+        (workspace / "upload.json").write_text(
+            json.dumps(asdict(_UPLOADED_RECORD)), encoding="utf-8"
+        )
+        (workspace / "thumbnail.jpg").write_bytes(b"img")
+        with patch("uploader.get_client", side_effect=RuntimeError("OAuth token")):
+            with pytest.raises(AuthRequiredError):
+                set_thumbnail_for_video(str(video))
+
+        youtube = MagicMock()
+        youtube.thumbnails.return_value.set.return_value.execute.side_effect = (
+            RefreshError("revoked")
+        )
+        with patch("uploader.get_client", return_value=youtube):
+            with pytest.raises(AuthRequiredError):
+                set_thumbnail_for_video(str(video))
