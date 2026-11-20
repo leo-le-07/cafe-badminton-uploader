@@ -14,20 +14,12 @@ import {
   selectMatch,
   updateMatch,
 } from './model.js';
+import { formatLength, pad } from './format.js';
 import { addNames, nameCounts, splitNames, suggestNames } from './names.js';
 import { matchColor } from './timeline.js';
 
 const TYPES = ['ms', 'md', 'ws', 'wd', 'xd'];
 const SIDES = ['team1', 'team2'];
-
-const pad = (n) => String(n).padStart(2, '0');
-
-function formatLength(sec) {
-  const s = Math.round(sec);
-  const h = Math.floor(s / 3600);
-  const mmss = `${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
-  return h > 0 ? `${h}:${mmss}` : mmss;
-}
 
 function today() {
   const d = new Date();

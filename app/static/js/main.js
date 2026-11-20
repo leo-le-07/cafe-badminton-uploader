@@ -9,6 +9,7 @@
 
 import * as api from './api.js';
 import { createAuth } from './auth.js';
+import { esc, formatLength, pad } from './format.js';
 import { createMatches } from './matches.js';
 import {
   addSource,
@@ -121,15 +122,6 @@ const recordedDates = () => Object.fromEntries(
   boot.sources.filter((s) => s.recorded_at).map((s) => [s.name, s.recorded_at.slice(0, 10)]),
 );
 const circled = (i) => String.fromCharCode(0x2460 + i);
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-const pad = (n) => String(n).padStart(2, '0');
-
-function formatLength(sec) {
-  const s = Math.round(sec);
-  const h = Math.floor(s / 3600);
-  const mmss = `${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
-  return h > 0 ? `${h}:${mmss}` : mmss;
-}
 
 function formatRecorded(iso) {
   if (!iso) return '';

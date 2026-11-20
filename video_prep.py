@@ -15,17 +15,6 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
-MATCH_TYPES = {
-    "ms": "Men's Singles",
-    "md": "Men's Doubles",
-    "ws": "Women's Singles",
-    "wd": "Women's Doubles",
-    "xd": "Mixed Doubles",
-}
-
-FIXED_TAGS = "#sunbadminton #badminton #cafebadminton"
-
-
 def _format_team_names(team1: list[str], team2: list[str], separator: str = "/") -> str:
     team1_str = separator.join(team1)
     team2_str = separator.join(team2)
@@ -73,7 +62,7 @@ def create_description(
         f"#{_create_tag(tournament)}",
     ]
 
-    all_tags = f"{FIXED_TAGS} {' '.join(dynamic_tags)}"
+    all_tags = f"{constants.FIXED_TAGS} {' '.join(dynamic_tags)}"
     parts = [
         all_tags,
         "",
@@ -93,9 +82,9 @@ def create_metadata_from_fields(
     tournament: str,
     match_date: str,
 ) -> MatchMetadata:
-    if match_type not in MATCH_TYPES:
+    if match_type not in constants.MATCH_TYPES:
         raise ValueError(f"Invalid match type: {match_type}")
-    match_type_name = MATCH_TYPES[match_type]
+    match_type_name = constants.MATCH_TYPES[match_type]
 
     title = create_title(tournament, team1, team2, match_date)
     description = create_description(

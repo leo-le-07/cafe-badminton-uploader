@@ -4,6 +4,7 @@
 // auto-scroll, edge dragging. It only renders and reports intents through the
 // callbacks; it never changes editor state itself.
 
+import { esc } from './format.js';
 import { segmentsOnTimeline, snap, totalDuration } from './model.js';
 import { formatClock, formatTimecode } from './player.js';
 
@@ -19,7 +20,6 @@ const FOLLOW_MARGIN = 30;
 const NO_LOCKS = new Set();
 
 const circled = (i) => String.fromCharCode(0x2460 + i);
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const TEMPLATE = `
   <div class="bar">

@@ -8,6 +8,7 @@
 
 import { snap, totalDuration } from './model.js';
 import { mediaUrl } from './api.js';
+import { pad } from './format.js';
 
 const RATES = [1, 2, 4, 8];
 // Seek slightly past the frame's start so the decoder lands on that frame and
@@ -21,8 +22,6 @@ function indexAt(layout, t) {
   const i = layout.findIndex((e) => t < e.offset + e.duration - 1e-6);
   return i === -1 ? layout.length - 1 : i;
 }
-
-const pad = (n) => String(n).padStart(2, '0');
 
 // HH:MM:SS:FF, FF counted with the fps of the source under t.
 export function formatTimecode(layout, t) {

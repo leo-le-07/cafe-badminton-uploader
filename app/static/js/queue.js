@@ -8,6 +8,7 @@
 // failed polls in a row the panel says the app cannot be reached.
 
 import * as api from './api.js';
+import { esc } from './format.js';
 import { matchProblems } from './model.js';
 
 const FAST_MS = 1000;
@@ -23,8 +24,6 @@ const STEP_LABELS = {
   cleanup: 'Lưu trữ',
 };
 const WITH_PERCENT = new Set(['encode', 'upload']);
-
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // Same as the title preview without tournament and date: "Nam/Hùng vs Tú/Long".
 export const jobTitle = (match) => `${match.team1.join('/')} vs ${match.team2.join('/')}`;

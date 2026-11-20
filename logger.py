@@ -7,7 +7,6 @@ from typing import Optional
 def setup_logging(
     level: int = logging.INFO,
     format_string: Optional[str] = None,
-    enable_temporal_integration: bool = True,
 ) -> None:
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -19,9 +18,6 @@ def setup_logging(
         force=True,
     )
 
-    if enable_temporal_integration:
-        logging.getLogger("temporalio").setLevel(logging.WARNING)
-        logging.getLogger("temporalio.workflow").setLevel(logging.INFO)
     logging.getLogger("google").setLevel(logging.WARNING)
     logging.getLogger("googleapiclient").setLevel(logging.WARNING)
 

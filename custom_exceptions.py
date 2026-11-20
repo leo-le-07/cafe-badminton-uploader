@@ -1,7 +1,3 @@
-class CreateMetadataError(Exception):
-    pass
-
-
 class VideoAlreadyUploadedError(Exception):
     pass
 
@@ -11,10 +7,6 @@ class NoUploadedRecordError(Exception):
 
 
 class MissingThumbnailDataError(Exception):
-    pass
-
-
-class ThumbnailSelectionError(Exception):
     pass
 
 

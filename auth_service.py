@@ -80,11 +80,6 @@ def get_client():
     return youtube
 
 
-def validate_auth() -> None:
-    youtube = get_client()
-    youtube.channels().list(mine=True, part="id").execute()
-
-
 _clock = time.monotonic
 _status_lock = threading.Lock()
 _status_cache: tuple[float, dict] | None = None

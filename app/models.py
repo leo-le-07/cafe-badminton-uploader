@@ -3,7 +3,6 @@ from dataclasses import asdict, dataclass
 
 from constants import DEFAULT_TOURNAMENT, MATCH_TYPES, MAX_TITLE_LENGTH
 
-JOB_STATUSES = ("queued", "running", "waiting_quota", "error", "done")
 JOB_STEPS = (
     "metadata",
     "select_thumbnail",

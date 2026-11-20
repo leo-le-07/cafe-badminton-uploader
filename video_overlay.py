@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 import tempfile
@@ -158,25 +157,6 @@ def render_thanks_overlay(width: int, height: int) -> Image.Image:
     canvas.alpha_composite(rotated, dest=(paste_x, paste_y))
 
     return canvas
-
-
-def get_video_dimensions(video_path: str) -> tuple[int, int]:
-    result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams",
-         "-select_streams", "v:0", video_path],
-        capture_output=True, check=True,
-    )
-    info = json.loads(result.stdout)
-    stream = info["streams"][0]
-    return int(stream["width"]), int(stream["height"])
-
-
-def _get_video_duration(video_path: str) -> float:
-    result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", video_path],
-        capture_output=True, check=True,
-    )
-    return float(json.loads(result.stdout)["format"]["duration"])
 
 
 @dataclass(frozen=True)

@@ -1,7 +1,3 @@
-import json
-import subprocess
-from unittest.mock import MagicMock, patch
-
 import pytest
 from PIL import Image, ImageDraw
 
@@ -10,9 +6,7 @@ from video_overlay import (
     build_render_command,
     _find_font_size_for_width,
     _get_font,
-    _get_video_duration,
     _measure_text,
-    get_video_dimensions,
     overlay_timing,
     render_cafe_game_overlay,
     render_thanks_overlay,
@@ -210,23 +204,3 @@ class TestFindFontSizeForWidth:
         w, _ = _measure_text(draw, "GAME", font)
         assert w <= target_width
         assert size > 0
-
-
-class TestGetVideoDimensions:
-    def test_parses_ffprobe_json_output(self):
-        stdout = json.dumps({"streams": [{"width": 1920, "height": 1080}]}).encode()
-        mock_result = MagicMock(spec=subprocess.CompletedProcess)
-        mock_result.stdout = stdout
-        with patch("video_overlay.subprocess.run", return_value=mock_result):
-            width, height = get_video_dimensions("video.mov")
-        assert (width, height) == (1920, 1080)
-
-
-class TestGetVideoDuration:
-    def test_parses_ffprobe_duration_float(self):
-        stdout = json.dumps({"format": {"duration": "3723.456"}}).encode()
-        mock_result = MagicMock(spec=subprocess.CompletedProcess)
-        mock_result.stdout = stdout
-        with patch("video_overlay.subprocess.run", return_value=mock_result):
-            duration = _get_video_duration("video.mov")
-        assert duration == pytest.approx(3723.456)
