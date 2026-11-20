@@ -117,3 +117,78 @@ def test_source_info_to_dict():
 def test_playback_path_is_the_source_itself(tmp_path):
     src = tmp_path / "a.mov"
     assert playback_path(src) == src
+
+
+def _video_only(**video_fields) -> dict:
+    video = {
+        "codec_type": "video",
+        "width": 1920,
+        "height": 1080,
+        "r_frame_rate": "30/1",
+    }
+    video.update(video_fields)
+    return {"streams": [video], "format": {"duration": "10"}}
+
+
+@pytest.mark.parametrize(
+    "fields, expected",
+    [
+        (
+            {"side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}]},
+            (1080, 1920),
+        ),
+        ({"tags": {"rotate": "90"}}, (1080, 1920)),
+        (
+            {"side_data_list": [{"side_data_type": "Display Matrix", "rotation": 180}]},
+            (1920, 1080),
+        ),
+        (
+            {"side_data_list": [{"side_data_type": "Display Matrix", "rotation": 270}]},
+            (1080, 1920),
+        ),
+        ({}, (1920, 1080)),
+    ],
+    ids=[
+        "side-data-minus-90",
+        "rotate-tag-90",
+        "rotation-180",
+        "rotation-270",
+        "no-rotation",
+    ],
+)
+def test_probe_reports_display_dimensions(mock_run, tmp_path, fields, expected):
+    src = tmp_path / "r.mov"
+    src.write_bytes(b"x")
+    mock_run.return_value = ffprobe_result(_video_only(**fields))
+
+    info = probe(src)
+
+    assert (info.width, info.height) == expected
+
+
+@pytest.mark.parametrize(
+    "avg, r, expected",
+    [
+        ("30000/1001", "90000/1", 29.97),
+        ("0/0", "30/1", 30.0),
+        (None, "25/1", 25.0),
+        ("garbage", "30/1", 30.0),
+        ("0/0", "0/0", 0.0),
+    ],
+    ids=[
+        "avg-preferred",
+        "avg-zero",
+        "avg-missing",
+        "avg-unparseable",
+        "both-unusable",
+    ],
+)
+def test_probe_fps_prefers_avg_frame_rate(mock_run, tmp_path, avg, r, expected):
+    src = tmp_path / "f.mov"
+    src.write_bytes(b"x")
+    fields = {"r_frame_rate": r}
+    if avg is not None:
+        fields["avg_frame_rate"] = avg
+    mock_run.return_value = ffprobe_result(_video_only(**fields))
+
+    assert probe(src).fps == pytest.approx(expected, abs=0.01)

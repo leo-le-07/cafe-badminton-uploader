@@ -152,3 +152,93 @@ def test_hardware_failure_falls_back_to_libx264(sources, tmp_path, monkeypatch):
     assert encoders == ["h264_videotoolbox", "libx264"]
     duration, _ = _streams(out)
     assert duration == pytest.approx(2.0, abs=0.1)
+
+
+def test_rotated_source_renders_upright(sources, tmp_path):
+    rotated = tmp_path / "src" / "rotated.mov"
+    rotated.parent.mkdir()
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-display_rotation",
+            "90",
+            "-i",
+            str(sources / "a.mov"),
+            "-c",
+            "copy",
+            str(rotated),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    probed = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "v:0",
+            str(rotated),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    side_data = json.loads(probed.stdout)["streams"][0].get("side_data_list", [])
+    assert any(abs(sd.get("rotation", 0)) == 90 for sd in side_data), (
+        "rotation metadata was not written"
+    )
+
+    out = tmp_path / "processed.mov"
+    render_match([Segment("rotated.mov", 0, 2)], rotated.parent, out)
+
+    probed = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "v:0",
+            str(out),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    stream = json.loads(probed.stdout)["streams"][0]
+    assert (stream["width"], stream["height"]) == (240, 320)
+
+
+def test_aborting_progress_kills_ffmpeg(sources, tmp_path, monkeypatch):
+    children: list[subprocess.Popen] = []
+    real_popen = subprocess.Popen
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        children.append(proc)
+        return proc
+
+    monkeypatch.setattr(video_overlay.subprocess, "Popen", recording_popen)
+
+    class Cancelled(Exception):
+        pass
+
+    def cancel(_value: float) -> None:
+        raise Cancelled
+
+    out = tmp_path / "processed.mov"
+    with pytest.raises(Cancelled):
+        render_match([Segment("a.mov", 0, 4)], sources, out, progress=cancel)
+
+    ffmpeg = [p for p in children if p.args[0] == "ffmpeg"]
+    assert len(ffmpeg) == 1
+    assert ffmpeg[0].poll() is not None
+    assert not out.exists()
+    assert list(tmp_path.iterdir()) == []

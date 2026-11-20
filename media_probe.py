@@ -31,6 +31,37 @@ def _parse_rate(rate: str) -> float:
     return float(num) / float(den)
 
 
+def _fps(video: dict) -> float:
+    """Average frame rate; `r_frame_rate` can be a timebase-like value on
+    variable-frame-rate phone recordings, so it is only a fallback."""
+    for field in ("avg_frame_rate", "r_frame_rate"):
+        try:
+            rate = _parse_rate(video.get(field, "0/0"))
+        except ValueError:
+            continue
+        if rate > 0:
+            return rate
+    return 0.0
+
+
+def _rotation(video: dict) -> int:
+    for side_data in video.get("side_data_list", []):
+        if "rotation" in side_data:
+            return int(float(side_data["rotation"]))
+    try:
+        return int(float(video.get("tags", {}).get("rotate", 0)))
+    except ValueError:
+        return 0
+
+
+def _display_size(video: dict) -> tuple[int, int]:
+    """Width and height as shown, after the rotation that ffmpeg applies."""
+    width, height = int(video["width"]), int(video["height"])
+    if _rotation(video) % 180 == 90:
+        return height, width
+    return width, height
+
+
 def _recorded_at(fmt: dict, mtime: float) -> str:
     creation_time = fmt.get("tags", {}).get("creation_time")
     if creation_time:
@@ -66,12 +97,13 @@ def probe(path: Path) -> SourceInfo:
     if video is None:
         raise ValueError(f"No video stream in {path}")
 
+    width, height = _display_size(video)
     info = SourceInfo(
         name=path.name,
         duration=float(fmt["duration"]),
-        fps=_parse_rate(video.get("r_frame_rate", "0/0")),
-        width=int(video["width"]),
-        height=int(video["height"]),
+        fps=_fps(video),
+        width=width,
+        height=height,
         has_audio=any(s.get("codec_type") == "audio" for s in streams),
         recorded_at=_recorded_at(fmt, stat.st_mtime),
     )

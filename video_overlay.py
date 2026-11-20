@@ -259,10 +259,18 @@ def _run_ffmpeg(cmd: list[str], total_duration: float, progress: Callable[[float
     with tempfile.TemporaryFile() as err:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err, stdin=subprocess.DEVNULL, text=True)
         assert proc.stdout is not None
-        for line in proc.stdout:
-            key, _, value = line.strip().partition("=")
-            if key == "out_time_us" and progress and value.lstrip("-").isdigit() and total_duration > 0:
-                progress(max(0.0, min(100.0, int(value) / 1e6 / total_duration * 100)))
+        try:
+            with proc.stdout:
+                for line in proc.stdout:
+                    key, _, value = line.strip().partition("=")
+                    if key == "out_time_us" and progress and value.lstrip("-").isdigit() and total_duration > 0:
+                        progress(max(0.0, min(100.0, int(value) / 1e6 / total_duration * 100)))
+        except BaseException:
+            # Never leave ffmpeg running (and holding the sources) when the
+            # caller aborts, e.g. a progress callback raising to cancel.
+            proc.kill()
+            proc.wait()
+            raise
         returncode = proc.wait()
         err.seek(0)
         return returncode, err.read().decode(errors="replace")
