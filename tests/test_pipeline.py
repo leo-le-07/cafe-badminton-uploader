@@ -74,7 +74,7 @@ def calls(monkeypatch, ws):
     vp = utils.workspace_video_path(ws)
     c = Calls()
 
-    def fake_upload(video_path, heartbeat_callback=None):
+    def fake_upload(video_path, heartbeat_callback=None, *, privacy_status):
         c.names.append("upload")
         uploader.save_upload_record(vp, "vid1", thumbnail_set=False)
         return utils.get_uploaded_record(vp)
@@ -181,11 +181,30 @@ def test_upload_step_treats_already_uploaded_error_as_done(ws, job, monkeypatch)
     vp = utils.workspace_video_path(ws)
     utils.get_processed_video_path(vp).write_bytes(b"video")
 
-    def already(video_path, heartbeat_callback=None):
+    def already(video_path, heartbeat_callback=None, *, privacy_status):
         raise VideoAlreadyUploadedError("already uploaded")
 
     monkeypatch.setattr(uploader, "upload_video_with_idempotency", already)
     run_step(job, "upload", noop)  # does not raise
+
+
+@pytest.mark.parametrize("mode,privacy", [("dev", "private"), ("production", "public")])
+def test_upload_step_uses_the_privacy_of_the_jobs_mode(
+    ws, job, monkeypatch, mode, privacy
+):
+    vp = utils.workspace_video_path(ws)
+    utils.get_processed_video_path(vp).write_bytes(b"video")
+    seen = []
+
+    def fake_upload(video_path, heartbeat_callback=None, *, privacy_status):
+        seen.append(privacy_status)
+
+    monkeypatch.setattr(uploader, "upload_video_with_idempotency", fake_upload)
+    job.mode = mode
+
+    run_step(job, "upload", noop)
+
+    assert seen == [privacy]
 
 
 def test_upload_step_requires_the_encoded_video(ws, job, calls):

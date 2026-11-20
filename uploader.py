@@ -12,7 +12,6 @@ import httplib2
 import ssl
 import time
 from auth_service import get_client
-import config
 from pathlib import Path
 from typing import Any, Callable
 from datetime import datetime
@@ -83,7 +82,9 @@ def _youtube_client() -> Any:
         raise AuthRequiredError(str(e)) from e
 
 
-def _insert_request(youtube_client: Any, video_path: Path, metadata: MatchMetadata):
+def _insert_request(
+    youtube_client: Any, video_path: Path, metadata: MatchMetadata, privacy_status: str
+):
     media = MediaFileUpload(
         video_path, mimetype="video/*", resumable=True, chunksize=CHUNK_SIZE_MB
     )
@@ -97,7 +98,7 @@ def _insert_request(youtube_client: Any, video_path: Path, metadata: MatchMetada
                 "title": metadata.title,
             },
             "status": {
-                "privacyStatus": config.VIDEO_PRIVACY_STATUS,
+                "privacyStatus": privacy_status,
                 "selfDeclaredMadeForKids": False,
             },
         },
@@ -148,13 +149,15 @@ def upload(
     metadata: MatchMetadata,
     progress_callback: Callable[[float], None] | None = None,
     session_path: Path | None = None,
+    *,
+    privacy_status: str,
 ) -> str:
     total_size = video_path.stat().st_size
     saved_uri = load_upload_session(session_path, total_size) if session_path else None
 
     response = None
     if saved_uri:
-        request = _insert_request(youtube_client, video_path, metadata)
+        request = _insert_request(youtube_client, video_path, metadata, privacy_status)
         # googleapiclient asks the server for the received byte range (empty PUT)
         # before sending the next chunk when the request is in error state.
         request.resumable_uri = saved_uri
@@ -169,7 +172,7 @@ def upload(
             session_path.unlink(missing_ok=True)
 
     if response is None:
-        request = _insert_request(youtube_client, video_path, metadata)
+        request = _insert_request(youtube_client, video_path, metadata, privacy_status)
         response = _send_chunks(request, total_size, session_path, progress_callback)
 
     video_id = response.get("id")
@@ -193,6 +196,8 @@ def set_thumbnail(youtube_client: Any, video_id: str, thumbnail_path: Path) -> N
 def upload_video_with_idempotency(
     video_path: str,
     heartbeat_callback: Callable[[float], None] | None = None,
+    *,
+    privacy_status: str = "private",
 ) -> UploadedRecord:
     path = Path(video_path)
     uploaded_record = get_uploaded_record(path)
@@ -218,6 +223,7 @@ def upload_video_with_idempotency(
             metadata,
             heartbeat_callback,
             session_path=session_path,
+            privacy_status=privacy_status,
         )
     except RefreshError as e:
         raise AuthRequiredError(str(e)) from e

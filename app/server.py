@@ -132,6 +132,13 @@ def parse_match_ids(body) -> list[str]:
     return ids
 
 
+def parse_mode(body) -> str:
+    mode = body.get("mode") if isinstance(body, dict) else None
+    if not isinstance(mode, str) or mode not in config.MODES:
+        raise ApiError(400, ["Chế độ upload không hợp lệ, hãy tải lại trang"])
+    return mode
+
+
 # ---- sources --------------------------------------------------------------------
 
 
@@ -378,10 +385,7 @@ def create_app(queue: JobQueue) -> Flask:
         players = store.load_players()
         return jsonify(
             auth=auth_payload(),
-            defaults={
-                "tournament": config.DEFAULT_TOURNAMENT,
-                "privacy": config.VIDEO_PRIVACY_STATUS,
-            },
+            defaults={"tournament": config.DEFAULT_TOURNAMENT},
             sources=list_sources(session, queue),
             session=session.to_dict(),
             jobs=visible_jobs(session),
@@ -412,7 +416,9 @@ def create_app(queue: JobQueue) -> Flask:
 
     @app.post("/api/jobs")
     def enqueue():
-        ids = parse_match_ids(request.get_json(silent=True))
+        body = request.get_json(silent=True)
+        ids = parse_match_ids(body)
+        mode = parse_mode(body)
         if not auth_service.auth_status()["ok"]:
             raise ApiError(409, [SIGNED_OUT_MESSAGE])
         with session_lock:
@@ -422,7 +428,7 @@ def create_app(queue: JobQueue) -> Flask:
                 raise ApiError(400, errors)
             by_id = {m.id: m for m in session.matches}
             try:
-                created = queue.enqueue([by_id[id] for id in ids])
+                created = queue.enqueue([by_id[id] for id in ids], mode)
             except ValueError as e:
                 raise ApiError(400, [str(e)])
             except (OSError, subprocess.CalledProcessError) as e:

@@ -130,6 +130,25 @@ class TestUploadVideoWithIdempotency:
         assert result.video_id == "new_vid456"
         assert (workspace / "upload.json").exists()
 
+    @pytest.mark.parametrize("privacy", ["private", "public"])
+    def test_sends_the_given_privacy(self, video_workspace, privacy):
+        video, _ = video_workspace
+        mock_youtube = MagicMock()
+        insert = mock_youtube.videos.return_value.insert
+        insert.return_value.next_chunk.return_value = (None, {"id": "v"})
+        with patch("uploader.get_client", return_value=mock_youtube):
+            upload_video_with_idempotency(str(video), privacy_status=privacy)
+        assert insert.call_args.kwargs["body"]["status"]["privacyStatus"] == privacy
+
+    def test_is_private_when_no_privacy_is_given(self, video_workspace):
+        video, _ = video_workspace
+        mock_youtube = MagicMock()
+        insert = mock_youtube.videos.return_value.insert
+        insert.return_value.next_chunk.return_value = (None, {"id": "v"})
+        with patch("uploader.get_client", return_value=mock_youtube):
+            upload_video_with_idempotency(str(video))
+        assert insert.call_args.kwargs["body"]["status"]["privacyStatus"] == "private"
+
     def test_uses_processed_video_when_it_exists(self, video_workspace):
         video, workspace = video_workspace
         processed = workspace / "processed.mov"

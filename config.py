@@ -48,8 +48,6 @@ COMPLETED_DIR = get_env_path("COMPLETED_DIR", create_if_missing=True)
 
 CANDIDATE_THUMBNAIL_NUM = int(os.getenv("CANDIDATE_THUMBNAIL_NUM", 10))
 
-VIDEO_PRIVACY_STATUS = os.getenv("VIDEO_PRIVACY_STATUS", "private")
-
 LOGO_PATH = Path(os.getenv("LOGO_PATH", "assets/logo.png"))
 
 DATA_DIR = Path(os.getenv("DATA_DIR") or "./data").resolve()
@@ -59,5 +57,8 @@ DEFAULT_APP_PORT = 8790
 APP_PORT = int(os.getenv("APP_PORT") or DEFAULT_APP_PORT)
 
 DEFAULT_TOURNAMENT = constants.DEFAULT_TOURNAMENT
+
+MODES = constants.MODES
+DEFAULT_MODE = constants.DEFAULT_MODE
 
 QUOTA_RETRY_HOURS = int(os.getenv("QUOTA_RETRY_HOURS") or 4)

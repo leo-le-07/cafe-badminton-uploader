@@ -105,7 +105,7 @@ def test_enqueue_creates_queued_job_with_recorded_date_of_first_source(
     queue = JobQueue(clock=clock)
     match = _match("m1", first_source="first.mov")
 
-    [job] = queue.enqueue([match])
+    [job] = queue.enqueue([match], "dev")
 
     assert dirs == [config.INPUT_DIR / "first.mov"]
     assert job.recorded_date == "2026-11-19"
@@ -117,7 +117,7 @@ def test_enqueue_creates_queued_job_with_recorded_date_of_first_source(
 
 def test_job_runs_all_steps_in_order_then_done(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
 
     _drain(queue)
 
@@ -132,7 +132,7 @@ def test_job_runs_all_steps_in_order_then_done(fake, clock):
 def test_run_once_does_one_step_and_returns_false_when_idle(fake, clock):
     queue = JobQueue(clock=clock)
     assert queue.run_once() is False
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
 
     assert queue.run_once() is True
     assert fake.calls == [("m1", "metadata")]
@@ -141,8 +141,8 @@ def test_run_once_does_one_step_and_returns_false_when_idle(fake, clock):
 
 def test_jobs_run_one_at_a_time_in_queue_order(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
-    queue.enqueue([_match("m3")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
+    queue.enqueue([_match("m3")], "dev")
 
     _drain(queue)
 
@@ -164,7 +164,7 @@ def test_progress_and_step_are_persisted_to_job_json(fake, clock):
 
     fake.during = during
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
 
     _drain(queue)
 
@@ -186,7 +186,7 @@ def test_progress_writes_are_throttled(fake, clock, monkeypatch):
 
     fake.during = during
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     for _ in range(3):  # metadata, select_thumbnail, render_thumbnail
         queue.run_once()
 
@@ -200,7 +200,7 @@ def test_progress_writes_are_throttled(fake, clock, monkeypatch):
 def test_error_stops_that_job_and_queue_moves_on(fake, clock):
     fake.fail[("m1", "encode")] = RuntimeError("ffmpeg exploded")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
 
     _drain(queue)
 
@@ -217,7 +217,7 @@ def test_error_stops_that_job_and_queue_moves_on(fake, clock):
 def test_retry_resumes_from_failed_step_not_from_start(fake, clock):
     fake.fail[("m1", "encode")] = RuntimeError("boom")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     _drain(queue)
     fake.calls.clear()
     del fake.fail[("m1", "encode")]
@@ -233,7 +233,7 @@ def test_retry_resumes_from_failed_step_not_from_start(fake, clock):
 
 def test_retry_refused_for_jobs_that_did_not_stop(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     with pytest.raises(ValueError):
         queue.retry("m1")
     with pytest.raises(KeyError):
@@ -243,7 +243,7 @@ def test_retry_refused_for_jobs_that_did_not_stop(fake, clock):
 def test_quota_puts_job_in_waiting_and_blocks_later_uploads_only(fake, clock):
     fake.fail[("m1", "upload")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
 
     _drain(queue)
 
@@ -266,7 +266,7 @@ def test_quota_puts_job_in_waiting_and_blocks_later_uploads_only(fake, clock):
 def test_waiting_quota_retries_after_configured_hours(fake, clock):
     fake.fail[("m1", "upload")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
     _drain(queue)
     fake.calls.clear()
 
@@ -286,7 +286,7 @@ def test_waiting_quota_retries_after_configured_hours(fake, clock):
 def test_quota_again_on_retry_keeps_later_jobs_waiting(fake, clock):
     fake.fail[("m1", "upload")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
     _drain(queue)
     fake.calls.clear()
 
@@ -300,7 +300,7 @@ def test_quota_again_on_retry_keeps_later_jobs_waiting(fake, clock):
 def test_manual_retry_of_quota_job_tries_upload_now(fake, clock):
     fake.fail[("m1", "upload")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
     _drain(queue)
     fake.calls.clear()
     del fake.fail[("m1", "upload")]
@@ -317,14 +317,14 @@ def test_manual_retry_of_quota_job_tries_upload_now(fake, clock):
 def test_auth_error_marks_job_error_and_worker_survives(fake, clock):
     fake.fail[("m1", "upload")] = AuthRequiredError("token expired")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     _drain(queue)
 
     job1 = _status(queue, "m1")
     assert job1["status"] == "error"
     assert "đăng nhập" in job1["error"]
 
-    queue.enqueue([_match("m2")])
+    queue.enqueue([_match("m2")], "dev")
     assert queue.run_once() is True
     assert fake.calls[-1] == ("m2", "metadata")
 
@@ -333,7 +333,7 @@ def test_unexpected_exception_in_bookkeeping_does_not_leave_job_executing(
     fake, clock, monkeypatch
 ):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     real_save = store.save_job
     failing = {"on": True}
 
@@ -421,7 +421,7 @@ def test_finished_job_stays_done_and_locked_after_restart(fake, clock):
 
     fake.during = real_cleanup
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     _drain(queue)
     assert not store.workspace_dir("m1").exists()
 
@@ -432,7 +432,7 @@ def test_finished_job_stays_done_and_locked_after_restart(fake, clock):
     assert job["youtube_link"] == "https://youtu.be/vid-m1"
     assert restarted.locked_match_ids() == {"m1"}
     with pytest.raises(ValueError):
-        restarted.enqueue([_match("m1")])
+        restarted.enqueue([_match("m1")], "dev")
     with pytest.raises(ValueError):
         restarted.retry("m1")
     with pytest.raises(ValueError):
@@ -474,7 +474,7 @@ def test_archived_jobs_and_live_jobs_keep_queue_order(fake, clock):
 
 def test_unqueue_removes_workspace_and_returns_match(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
     queue.run_once()  # m1 metadata
 
     match = queue.unqueue("m1")
@@ -489,7 +489,7 @@ def test_unqueue_removes_workspace_and_returns_match(fake, clock):
 
 def test_unqueue_refused_when_running_or_uploaded(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
     refused = []
 
     def during(job, step, progress):
@@ -515,16 +515,16 @@ def test_unqueue_refused_when_running_or_uploaded(fake, clock):
 
 def test_enqueue_rejects_match_with_problems_or_already_queued(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     incomplete = _match("m2")
     incomplete.team2 = [""]
 
     with pytest.raises(ValueError):
-        queue.enqueue([incomplete])
+        queue.enqueue([incomplete], "dev")
     with pytest.raises(ValueError):
-        queue.enqueue([_match("m3"), _match("m1")])
+        queue.enqueue([_match("m3"), _match("m1")], "dev")
     with pytest.raises(ValueError):
-        queue.enqueue([_match("m4"), _match("m4")])
+        queue.enqueue([_match("m4"), _match("m4")], "dev")
 
     assert queue.locked_match_ids() == {"m1"}
     assert not store.workspace_dir("m3").exists()
@@ -533,7 +533,7 @@ def test_enqueue_rejects_match_with_problems_or_already_queued(fake, clock):
 def test_queue_order_survives_restart_for_jobs_enqueued_together(fake, clock):
     queue = JobQueue(clock=clock)
     ids = [f"m{i}" for i in range(10)]
-    queue.enqueue([_match(id) for id in ids])
+    queue.enqueue([_match(id) for id in ids], "dev")
 
     restarted = JobQueue(clock=clock)
 
@@ -542,7 +542,7 @@ def test_queue_order_survives_restart_for_jobs_enqueued_together(fake, clock):
 
 def test_start_and_stop_do_not_hang(fake):
     queue = JobQueue()
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     queue.start()
     queue.stop()
 
@@ -563,7 +563,7 @@ def test_second_caller_cannot_pick_work_while_a_step_executes(fake, clock):
 
     fake.during = during
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
 
     worker = _run_in_thread(queue.run_once)
     assert started.wait(5)
@@ -596,7 +596,7 @@ def test_stop_aborts_running_step_and_leaves_job_queued_at_that_step(fake):
 
     fake.during = during
     queue = JobQueue()
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     queue.start()
     assert started.wait(5)
 
@@ -620,7 +620,7 @@ def test_start_twice_keeps_one_worker_and_restart_after_stop_works(fake):
 
     fake.during = during
     queue = JobQueue()
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     queue.start()
     assert started.wait(5)
     first = queue._thread
@@ -651,7 +651,7 @@ def test_start_refuses_while_a_stopped_worker_is_still_finishing(fake, monkeypat
     fake.during = during
     monkeypatch.setattr(app.jobs, "STOP_TIMEOUT_SECONDS", 0.01)
     queue = JobQueue()
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     queue.start()
     assert started.wait(5)
     queue.stop()  # times out: the step is still running
@@ -672,7 +672,7 @@ def test_base_exception_in_step_does_not_leave_job_executing(fake, clock):
 
     fake.fail[("m1", "metadata")] = Abort()
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
 
     with pytest.raises(Abort):
         queue.run_once()
@@ -697,7 +697,7 @@ def test_unqueue_refused_while_a_resumable_upload_session_exists(fake, clock):
     # resuming the session can tell, so the workspace must not be deleted.
     fake.fail[("m1", "upload")] = ConnectionError("response lost")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     _drain(queue)
     _live_upload_session("m1")
     assert _status(queue, "m1")["status"] == "error"
@@ -712,7 +712,7 @@ def test_unqueue_refused_while_a_resumable_upload_session_exists(fake, clock):
 def test_unqueue_allowed_for_waiting_quota_job_without_upload(fake, clock):
     fake.fail[("m1", "upload")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     _drain(queue)
     assert _status(queue, "m1")["status"] == "waiting_quota"
 
@@ -724,7 +724,7 @@ def test_unqueue_allowed_for_waiting_quota_job_without_upload(fake, clock):
 def test_unqueue_refused_for_waiting_quota_job_with_live_session(fake, clock):
     fake.fail[("m1", "upload")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     _drain(queue)
     _live_upload_session("m1")
 
@@ -735,7 +735,7 @@ def test_unqueue_refused_for_waiting_quota_job_with_live_session(fake, clock):
 
 def test_corrupt_upload_record_makes_the_job_an_error_without_uploading(fake, clock):
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1")])
+    queue.enqueue([_match("m1")], "dev")
     for _ in range(4):  # metadata .. encode
         queue.run_once()
     assert _status(queue, "m1")["step"] == "upload"
@@ -756,7 +756,7 @@ def test_corrupt_upload_record_makes_the_job_an_error_without_uploading(fake, cl
 def test_quota_while_setting_thumbnail_waits_for_quota(fake, clock):
     fake.fail[("m1", "set_thumbnail")] = QuotaExceededError("quota")
     queue = JobQueue(clock=clock)
-    queue.enqueue([_match("m1"), _match("m2")])
+    queue.enqueue([_match("m1"), _match("m2")], "dev")
 
     _drain(queue)
 
@@ -825,8 +825,8 @@ def test_archive_with_upload_record_but_no_job_file_stays_locked(fake, clock):
     assert "m4" not in locked
     for id in ("m1", "m2", "m3"):
         with pytest.raises(ValueError):
-            queue.enqueue([_match(id)])
-    assert queue.enqueue([_match("m4")])
+            queue.enqueue([_match(id)], "dev")
+    assert queue.enqueue([_match("m4")], "dev")
     assert queue.run_once() is True  # only m4 runs
     assert fake.calls == [("m4", "metadata")]
     # Read-only inside COMPLETED_DIR.
@@ -851,3 +851,31 @@ def test_archive_id_comes_from_readable_job_file_over_folder_name(fake, clock):
     queue = JobQueue(clock=clock)
 
     assert "real-id" in queue.locked_match_ids()
+
+
+def test_enqueue_stamps_the_mode_on_each_job(fake, clock):
+    queue = JobQueue(clock=clock)
+
+    jobs = queue.enqueue([_match("m1"), _match("m2")], "production")
+
+    assert [j.mode for j in jobs] == ["production", "production"]
+    assert store.load_job("m1").mode == "production"
+    assert _status(queue, "m2")["mode"] == "production"
+
+
+def test_enqueue_refuses_an_unknown_mode(fake, clock):
+    queue = JobQueue(clock=clock)
+    with pytest.raises(ValueError):
+        queue.enqueue([_match("m1")], "prod")
+    assert queue.snapshot() == []
+
+
+def test_retry_keeps_the_jobs_mode(fake, clock):
+    fake.fail[("m1", "encode")] = RuntimeError("boom")
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")], "production")
+    _drain(queue)
+
+    queue.retry("m1")
+
+    assert store.load_job("m1").mode == "production"

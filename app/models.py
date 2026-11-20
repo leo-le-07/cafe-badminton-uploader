@@ -1,7 +1,13 @@
 import re
 from dataclasses import asdict, dataclass
 
-from constants import DEFAULT_TOURNAMENT, MATCH_TYPES, MAX_TITLE_LENGTH
+from constants import (
+    DEFAULT_MODE,
+    DEFAULT_TOURNAMENT,
+    MATCH_TYPES,
+    MAX_TITLE_LENGTH,
+    MODES,
+)
 
 JOB_STEPS = (
     "metadata",
@@ -103,12 +109,17 @@ class Job:
     error: str | None
     youtube_link: str | None
     queued_at: str
+    # The editor's mode when the match was queued; decides the upload privacy.
+    mode: str = DEFAULT_MODE
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> "Job":
+        # Jobs saved before modes existed, or with an unknown mode, are "dev":
+        # a wrongly private upload is easy to fix, a wrongly public one is not.
+        mode = d.get("mode")
         return cls(
             match=Match.from_dict(d["match"]),
             recorded_date=d["recorded_date"],
@@ -118,6 +129,7 @@ class Job:
             error=d.get("error"),
             youtube_link=d.get("youtube_link"),
             queued_at=d["queued_at"],
+            mode=mode if isinstance(mode, str) and mode in MODES else DEFAULT_MODE,
         )
 
 

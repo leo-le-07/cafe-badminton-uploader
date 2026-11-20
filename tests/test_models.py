@@ -1,5 +1,8 @@
+import pytest
+
 import video_prep
 from app.models import (
+    Job,
     Match,
     OpenPoint,
     Segment,
@@ -163,3 +166,31 @@ def test_angle_brackets_in_names_or_tournament_are_a_problem():
     m = _m()
     m.tournament = "Cup > 1"
     assert match_problems(m) == [message]
+
+
+def _job_dict():
+    return {
+        "match": _m().to_dict(),
+        "recorded_date": "2026-11-19",
+        "status": "queued",
+        "step": "metadata",
+        "progress": 0.0,
+        "error": None,
+        "youtube_link": None,
+        "queued_at": "2026-11-20T10:00:00",
+    }
+
+
+def test_job_mode_round_trips():
+    d = _job_dict()
+    d["mode"] = "production"
+    assert Job.from_dict(d).mode == "production"
+    assert Job.from_dict(d).to_dict()["mode"] == "production"
+
+
+@pytest.mark.parametrize("stored", [None, "prod", "", 3, ["dev"]])
+def test_job_without_a_known_mode_is_dev(stored):
+    d = _job_dict()
+    if stored is not None:
+        d["mode"] = stored
+    assert Job.from_dict(d).mode == "dev"

@@ -200,10 +200,7 @@ def test_media_refuses_anything_outside_input_dir(client, source, dirs, name):
 def test_bootstrap_shape(client):
     body = client.get("/api/bootstrap").json
     assert set(body) == {"auth", "defaults", "sources", "session", "jobs", "players"}
-    assert body["defaults"] == {
-        "tournament": config.DEFAULT_TOURNAMENT,
-        "privacy": config.VIDEO_PRIVACY_STATUS,
-    }
+    assert body["defaults"] == {"tournament": config.DEFAULT_TOURNAMENT}
     assert body["session"] == {
         "sources": [],
         "matches": [],
@@ -361,9 +358,12 @@ def test_open_point_inside_a_segment_is_saved_and_still_blocks_enqueue(
     )
     assert put(client, body).status_code == 200
     assert stored_content() == body
-    r = client.post("/api/jobs", json={"match_ids": ["m2"]})
+    r = client.post("/api/jobs", json={"match_ids": ["m2"], "mode": "dev"})
     assert r.status_code == 400 and any("đang mở" in e for e in r.json["errors"])
-    assert client.post("/api/jobs", json={"match_ids": ["m1"]}).status_code == 200
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"}).status_code
+        == 200
+    )
 
 
 def test_open_point_on_missing_source_round_trips(client, source):
@@ -387,12 +387,15 @@ def test_enqueue_refuses_match_with_an_open_segment(client, source, signed_in):
     )
     assert put(client, body).status_code == 200
 
-    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
 
     assert r.status_code == 400
     assert any("đang mở" in e for e in r.json["errors"])
     assert statuses(client) == {}
-    assert client.post("/api/jobs", json={"match_ids": ["m2"]}).status_code == 200
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m2"], "mode": "dev"}).status_code
+        == 200
+    )
 
 
 @pytest.mark.parametrize(
@@ -451,7 +454,7 @@ def test_session_with_missing_source_still_loads(client, source, signed_in):
     )
     assert put(client, edited).status_code == 200
 
-    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     assert r.status_code == 400
     assert any("gone.mov" in e for e in r.json["errors"])
     assert statuses(client) == {}
@@ -464,7 +467,10 @@ def test_put_session_cannot_change_locked_match(client, signed_in):
         ["a.mov", "b.mov"], match("m1", ("a.mov", 0, 10)), match("m2", ("b.mov", 0, 10))
     )
     assert put(client, stored).status_code == 200
-    assert client.post("/api/jobs", json={"match_ids": ["m1"]}).status_code == 200
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"}).status_code
+        == 200
+    )
 
     changed = session(
         ["a.mov", "b.mov"],
@@ -495,7 +501,7 @@ def test_put_session_cannot_change_locked_match(client, signed_in):
 def test_put_session_cannot_reuse_id_of_finished_match(client, queue, signed_in):
     add_source("a.mov")
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     run_until_idle(queue)
     assert client.post("/api/sources/a.mov/archive").status_code == 200
     add_source("b.mov")
@@ -510,7 +516,7 @@ def test_put_session_cannot_reuse_id_of_finished_match(client, queue, signed_in)
 def test_enqueue_then_jobs_lists_it(client, source, signed_in):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10)), match("m2")))
 
-    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
 
     assert r.status_code == 200
     [job] = r.json
@@ -522,7 +528,7 @@ def test_enqueue_then_jobs_lists_it(client, source, signed_in):
 
 def test_enqueue_refused_while_signed_out(client, source):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     assert r.status_code == 409
     assert "đăng nhập" in r.json["errors"][0]
     assert statuses(client) == {}
@@ -541,7 +547,9 @@ def test_enqueue_is_all_or_nothing(client, signed_in):
         ),
     )
 
-    r = client.post("/api/jobs", json={"match_ids": ["m1", "m2", "m3", "nope"]})
+    r = client.post(
+        "/api/jobs", json={"match_ids": ["m1", "m2", "m3", "nope"], "mode": "dev"}
+    )
 
     assert r.status_code == 400
     errors = " | ".join(r.json["errors"])
@@ -552,8 +560,11 @@ def test_enqueue_is_all_or_nothing(client, signed_in):
 
 def test_enqueue_refuses_match_that_already_has_a_job(client, source, signed_in):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    assert client.post("/api/jobs", json={"match_ids": ["m1"]}).status_code == 200
-    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"}).status_code
+        == 200
+    )
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     assert r.status_code == 400 and "m1" in r.json["errors"][0]
     assert len(client.get("/api/jobs").json) == 1
 
@@ -563,7 +574,7 @@ def test_enqueue_checks_segments_saved_while_source_was_missing(client, signed_i
         Session.from_dict(session(["a.mov"], match("m1", ("a.mov", 500, 700))))
     )
     add_source("a.mov")  # the file comes back; it is 600 s long
-    r = client.post("/api/jobs", json={"match_ids": ["m1"]})
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     assert r.status_code == 400
     assert "thời lượng" in r.json["errors"][0]
     assert statuses(client) == {}
@@ -585,9 +596,34 @@ def test_enqueue_rejects_malformed_body(client, signed_in, body):
     assert r.status_code == 400 and r.json["errors"]
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"match_ids": ["m1"]},
+        {"match_ids": ["m1"], "mode": "prod"},
+        {"match_ids": ["m1"], "mode": None},
+        {"match_ids": ["m1"], "mode": ["dev"]},
+    ],
+)
+def test_enqueue_without_a_valid_mode_is_refused(client, source, signed_in, body):
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    r = client.post("/api/jobs", json=body)
+    assert r.status_code == 400
+    assert r.json["errors"] == ["Chế độ upload không hợp lệ, hãy tải lại trang"]
+    assert statuses(client) == {}
+
+
+def test_enqueue_stamps_the_mode_on_the_job(client, source, signed_in):
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    r = client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "production"})
+    assert r.status_code == 200
+    assert r.json[0]["mode"] == "production"
+    assert client.get("/api/jobs").json[0]["mode"] == "production"
+
+
 def test_unqueue_conflict_when_uploaded(client, queue, fake, source, signed_in):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     fake.fail[("m1", "set_thumbnail")] = RuntimeError("thumbnail refused")
     run_until_idle(queue)
     assert statuses(client) == {"m1": "error"}
@@ -602,7 +638,7 @@ def test_unqueue_conflict_while_upload_session_is_live(
     client, queue, fake, source, signed_in
 ):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     fake.fail[("m1", "upload")] = ConnectionError("response lost")
     run_until_idle(queue)
     (store.workspace_dir("m1") / uploader.UPLOAD_SESSION_FILE).write_text(
@@ -619,7 +655,7 @@ def test_unqueue_conflict_while_upload_session_is_live(
 
 def test_unqueue_unlocks_match(client, source, signed_in):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
 
     r = client.post("/api/jobs/m1/unqueue")
 
@@ -637,7 +673,7 @@ def test_unqueue_and_retry_unknown_job(client):
 
 def test_retry(client, queue, fake, source, signed_in):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     assert client.post("/api/jobs/m1/retry").status_code == 409
 
     fake.fail[("m1", "encode")] = RuntimeError("ffmpeg died")
@@ -660,9 +696,9 @@ def test_jobs_omit_finished_jobs_outside_the_session(client, queue, signed_in):
             match("m2", ("b.mov", 0, 10)),
         ),
     )
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     run_until_idle(queue)
-    client.post("/api/jobs", json={"match_ids": ["m2"]})
+    client.post("/api/jobs", json={"match_ids": ["m2"], "mode": "dev"})
     assert statuses(client) == {"m1": "done", "m2": "queued"}
 
     assert client.post("/api/sources/a.mov/archive").status_code == 200
@@ -687,7 +723,7 @@ def test_archive_source_refused_while_matches_pending(client, queue, signed_in):
             match("m2", ("a.mov", 20, 30)),
         ),
     )
-    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
     run_until_idle(queue)
 
     assert client.post("/api/sources/a.mov/archive").status_code == 409  # m2 not done
@@ -711,7 +747,7 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
             selected="m1",
         ),
     )
-    client.post("/api/jobs", json={"match_ids": ["m1", "m2"]})
+    client.post("/api/jobs", json={"match_ids": ["m1", "m2"], "mode": "dev"})
     run_until_idle(queue)
     sources = {s["name"]: s for s in client.get("/api/sources").json}
     assert sources["a.mov"]["archivable"] is True
@@ -732,7 +768,7 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
     # The client saves the session back unchanged: still valid.
     assert put(client, stored.to_dict()).status_code == 200
 
-    client.post("/api/jobs", json={"match_ids": ["m3"]})
+    client.post("/api/jobs", json={"match_ids": ["m3"], "mode": "dev"})
     run_until_idle(queue)
     assert client.post("/api/sources/b.mov/archive").status_code == 200
     assert stored_content() == session([])
@@ -875,7 +911,7 @@ def test_mutating_routes_need_the_editor_header(
     monkeypatch.setattr(
         auth_service.BackgroundLogin, "start", lambda self: started.append(1)
     )
-    r = getattr(bare_client, method)(path, json={"match_ids": ["m1"]})
+    r = getattr(bare_client, method)(path, json={"match_ids": ["m1"], "mode": "dev"})
     assert r.status_code == 403
     assert "X-Cafe-Editor" in r.json["errors"][0]
     assert started == []

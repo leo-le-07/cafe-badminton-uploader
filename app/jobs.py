@@ -86,7 +86,9 @@ class JobQueue:
 
     # ---- API-side operations -------------------------------------------------
 
-    def enqueue(self, matches: list[Match]) -> list[Job]:
+    def enqueue(self, matches: list[Match], mode: str) -> list[Job]:
+        if mode not in config.MODES:
+            raise ValueError(f"Chế độ không hợp lệ: {mode}")
         ids = [match.id for match in matches]
         if len(set(ids)) != len(ids):
             raise ValueError("Một trận được đưa vào hàng đợi hai lần")
@@ -120,6 +122,7 @@ class JobQueue:
                     error=None,
                     youtube_link=None,
                     queued_at=self._next_queued_at(),
+                    mode=mode,
                 )
                 store.save_job(job)
                 self._jobs[job.match.id] = job

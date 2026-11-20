@@ -97,7 +97,9 @@ def _upload(job: Job, vp: Path, progress: Progress) -> None:
         # is not a real file for a workspace.
         raise FileNotFoundError(f"Encoded video missing: {processed}")
     try:
-        uploader.upload_video_with_idempotency(str(vp), progress)
+        uploader.upload_video_with_idempotency(
+            str(vp), progress, privacy_status=config.MODES[job.mode]
+        )
     except VideoAlreadyUploadedError:
         logger.info(f"{job.match.id} was already uploaded")
 
