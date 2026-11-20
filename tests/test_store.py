@@ -1,0 +1,141 @@
+import json
+
+import pytest
+
+import config
+from app.models import Job, Match, Segment, Session
+from app.store import (
+    delete_workspace,
+    list_jobs,
+    load_job,
+    load_players,
+    load_session,
+    record_players,
+    save_job,
+    save_session,
+    seed_players_from_completed,
+    workspace_dir,
+)
+
+
+@pytest.fixture(autouse=True)
+def data_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    return tmp_path
+
+
+def _match(id="m1"):
+    return Match(
+        id=id,
+        match_type="md",
+        team1=["Nam", "Hùng"],
+        team2=["Tú", "Long"],
+        tournament="Cafe Game",
+        segments=[Segment("a.mov", 1.5, 30.0), Segment("b.mov", 0.0, 12.25)],
+    )
+
+
+def _job(id="m1", queued_at="2026-11-20T10:00:00"):
+    return Job(
+        match=_match(id),
+        recorded_date="2026-11-20",
+        status="queued",
+        step="metadata",
+        progress=0.0,
+        error=None,
+        youtube_link=None,
+        queued_at=queued_at,
+    )
+
+
+def test_session_roundtrip():
+    s = Session(["a.mov", "b.mov"], [_match("m1"), _match("m2")], "m2")
+    save_session(s)
+    assert load_session() == s
+
+
+def test_missing_session_file_gives_empty_session():
+    assert load_session() == Session([], [], None)
+
+
+def test_corrupt_session_file_is_kept_aside_not_deleted(tmp_path):
+    (tmp_path / "session.json").write_text("{ half written")
+    assert load_session() == Session([], [], None)
+    kept = list(tmp_path.glob("session.json.corrupt-*"))
+    assert kept
+    assert kept[0].read_text() == "{ half written"
+
+
+def test_save_session_is_atomic(tmp_path):
+    save_session(Session(["a.mov"], [_match()], None))
+    assert (tmp_path / "session.json").exists()
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_save_session_keeps_vietnamese_readable(tmp_path):
+    save_session(Session(["a.mov"], [_match()], None))
+    assert "Hùng" in (tmp_path / "session.json").read_text(encoding="utf-8")
+
+
+def test_workspace_dir_is_under_data_dir(tmp_path):
+    assert workspace_dir("m1") == tmp_path / "workspaces" / "m1"
+
+
+def test_job_roundtrip():
+    job = _job()
+    save_job(job)
+    assert (workspace_dir("m1") / "job.json").exists()
+    assert load_job("m1") == job
+
+
+def test_load_missing_job_gives_none():
+    assert load_job("nope") is None
+
+
+def test_jobs_listed_in_queue_order():
+    save_job(_job("late", "2026-11-20T11:00:00"))
+    save_job(_job("early", "2026-11-20T09:00:00"))
+    assert [j.match.id for j in list_jobs()] == ["early", "late"]
+
+
+def test_list_jobs_skips_workspaces_without_job():
+    workspace_dir("orphan").mkdir(parents=True)
+    save_job(_job("m1"))
+    assert [j.match.id for j in list_jobs()] == ["m1"]
+
+
+def test_list_jobs_without_workspaces_is_empty():
+    assert list_jobs() == []
+
+
+def test_delete_workspace_removes_everything():
+    save_job(_job("m1"))
+    (workspace_dir("m1") / "thumbnail.jpg").write_bytes(b"x")
+    delete_workspace("m1")
+    assert not workspace_dir("m1").exists()
+    assert load_job("m1") is None
+
+
+def test_delete_missing_workspace_is_noop():
+    delete_workspace("nope")
+
+
+def test_record_players_counts_usage():
+    record_players(["Nam", "Tú"])
+    record_players(["Nam"])
+    assert load_players() == {"Nam": 2, "Tú": 1}
+
+
+def test_seed_players_from_completed_runs_once(tmp_path, monkeypatch):
+    completed = tmp_path / "completed"
+    (completed / "x").mkdir(parents=True)
+    (completed / "x" / "metadata.json").write_text(
+        json.dumps({"team1_names": ["An"], "team2_names": ["Bình"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "COMPLETED_DIR", completed)
+
+    seed_players_from_completed()
+    seed_players_from_completed()
+
+    assert load_players() == {"An": 1, "Bình": 1}
