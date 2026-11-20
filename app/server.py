@@ -32,6 +32,16 @@ SIGNED_OUT_MESSAGE = (
     "Chưa đăng nhập YouTube hoặc phiên đăng nhập đã hết hạn. Hãy đăng nhập rồi thử lại."
 )
 
+# Every mutating API request must carry this header (app/static/js/api.js
+# sends it). A page on another site can send a "simple" cross-origin POST to
+# 127.0.0.1 without it, but not one with a custom header.
+EDITOR_HEADER = "X-Cafe-Editor"
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+MISSING_HEADER_MESSAGE = (
+    f"Yêu cầu bị từ chối: chỉ editor của ứng dụng mới được thay đổi dữ liệu "
+    f"(thiếu header {EDITOR_HEADER})"
+)
+
 HTTP_ERROR_MESSAGES = {
     400: "Yêu cầu không hợp lệ",
     404: "Không tìm thấy địa chỉ này",
@@ -336,6 +346,16 @@ def create_app(queue: JobQueue) -> Flask:
             message = HTTP_ERROR_MESSAGES.get(e.code, f"Lỗi {e.code}")
             return jsonify(errors=[message]), e.code
         return e
+
+    @app.before_request
+    def require_editor_header():
+        if (
+            request.path.startswith("/api/")
+            and request.method in MUTATING_METHODS
+            and request.headers.get(EDITOR_HEADER) != "1"
+        ):
+            return jsonify(errors=[MISSING_HEADER_MESSAGE]), 403
+        return None
 
     @app.after_request
     def no_store(response):

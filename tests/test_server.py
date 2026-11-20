@@ -75,6 +75,15 @@ def queue(monkeypatch, fake):
 
 @pytest.fixture
 def client(queue):
+    c = server.create_app(queue).test_client()
+    # What app/static/js/api.js sends with every request.
+    c.environ_base["HTTP_X_CAFE_EDITOR"] = "1"
+    return c
+
+
+@pytest.fixture
+def bare_client(queue):
+    """A client without the editor header, like a request from another site."""
     return server.create_app(queue).test_client()
 
 
@@ -832,6 +841,43 @@ def test_login_can_be_retried_after_a_failure(client, fake_login):
 
     assert wait_for_login_to_end(client) == {"in_progress": False, "error": None}
     assert fake_login.calls == 2
+
+
+@pytest.mark.parametrize(
+    "method, path",
+    [
+        ("put", "/api/session"),
+        ("post", "/api/jobs"),
+        ("post", "/api/jobs/m1/retry"),
+        ("post", "/api/jobs/m1/unqueue"),
+        ("post", "/api/sources/a.mov/archive"),
+        ("post", "/api/auth/login"),
+        ("delete", "/api/session"),
+    ],
+)
+def test_mutating_routes_need_the_editor_header(bare_client, source, method, path, monkeypatch):
+    started = []
+    monkeypatch.setattr(auth_service.BackgroundLogin, "start", lambda self: started.append(1))
+    r = getattr(bare_client, method)(path, json={"match_ids": ["m1"]})
+    assert r.status_code == 403
+    assert "X-Cafe-Editor" in r.json["errors"][0]
+    assert started == []
+    assert (config.INPUT_DIR / "a.mov").exists()
+    assert not (config.DATA_DIR / store.SESSION_FILE).exists()
+
+
+def test_reads_need_no_header(bare_client):
+    assert bare_client.get("/api/bootstrap").status_code == 200
+    assert bare_client.get("/api/jobs").status_code == 200
+    assert bare_client.get("/").status_code == 200
+
+
+def test_wrong_header_value_is_refused(bare_client, monkeypatch):
+    started = []
+    monkeypatch.setattr(auth_service.BackgroundLogin, "start", lambda self: started.append(1))
+    r = bare_client.post("/api/auth/login", headers={"X-Cafe-Editor": "yes"})
+    assert r.status_code == 403
+    assert started == []
 
 
 @pytest.mark.parametrize(

@@ -3,8 +3,12 @@
 // `err.errors` holds them all, `err.status` the HTTP status (0 = network) and
 // `err.code` the server's machine-readable code, if any.
 
+// The server refuses changes without this header, so another website cannot
+// make the browser change anything here (app/server.py, EDITOR_HEADER).
+const EDITOR_HEADER = { 'X-Cafe-Editor': '1' };
+
 async function request(method, path, body, { keepalive = false } = {}) {
-  const init = { method, keepalive, headers: {} };
+  const init = { method, keepalive, headers: { ...EDITOR_HEADER } };
   if (body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
