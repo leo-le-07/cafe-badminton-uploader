@@ -63,6 +63,124 @@ def _streams(path: Path) -> tuple[float, set[str]]:
     return float(data["format"]["duration"]), {s["codec_type"] for s in data["streams"]}
 
 
+# Each frame of an indexed source shows its own number N: the left half has
+# the grey level 16 + (N // 16) * 13, the right half 16 + (N % 16) * 13. The
+# levels are far enough apart to read back after a lossy encode.
+_SIZE = (320, 240)
+_SAMPLE = (32, 24)
+
+
+def _make_indexed_source(path: Path, rate: str, frames: int) -> None:
+    geq = "geq=lum='if(lt(X,W/2),16+floor(N/16)*13,16+mod(N,16)*13)':cb=128:cr=128"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=black:s={_SIZE[0]}x{_SIZE[1]}:r={rate}",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=sample_rate=48000",
+            "-vf",
+            f"format=yuv420p,{geq}",
+            "-frames:v",
+            str(frames),
+            "-c:v",
+            "libx264",
+            "-g",
+            "30",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _frame_numbers(path: Path) -> list[int]:
+    """The source frame number shown in each frame of `path`, read from the
+    bottom rows (clear of the CAFE GAME overlay and the logo)."""
+    w, h = _SAMPLE
+    raw = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-vf",
+            f"scale={w}:{h}",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
+    luma, stride = w * h, w * h * 3 // 2
+    numbers = []
+    for offset in range(0, len(raw) - stride + 1, stride):
+        frame = raw[offset : offset + luma]
+
+        def level(x0: int, x1: int) -> int:
+            values = [frame[r * w + c] for r in range(h - 3, h) for c in range(x0, x1)]
+            return round((sum(values) / len(values) - 16) / 13)
+
+        numbers.append(level(2, 6) * 16 + level(w - 6, w - 2))
+    return numbers
+
+
+@pytest.fixture(scope="module")
+def indexed(tmp_path_factory) -> Path:
+    d = tmp_path_factory.mktemp("indexed")
+    _make_indexed_source(d / "f30.mov", "30", 120)
+    _make_indexed_source(d / "f2997.mov", "30000/1001", 120)
+    assert _frame_numbers(d / "f30.mov") == list(range(120))
+    return d
+
+
+@pytest.mark.parametrize(
+    "name, fps",
+    [("f30.mov", 30.0), ("f2997.mov", 30000 / 1001)],
+)
+@pytest.mark.parametrize("first, stop", [(0, 10), (1, 11), (2, 12), (7, 37), (44, 54)])
+def test_cut_keeps_exactly_the_marked_frames(indexed, tmp_path, name, fps, first, stop):
+    """A segment [first/fps, stop/fps) keeps frames first..stop-1: the frame
+    under the playhead at I is kept, the one at O is dropped."""
+    out = tmp_path / "processed.mov"
+    render_match([Segment(name, first / fps, stop / fps)], indexed, out)
+    assert _frame_numbers(out) == list(range(first, stop))
+
+
+def test_join_of_two_frame_rates_keeps_exact_frames(indexed, tmp_path):
+    out = tmp_path / "processed.mov"
+    ntsc = 30000 / 1001
+    render_match(
+        [Segment("f30.mov", 3 / 30, 8 / 30), Segment("f2997.mov", 5 / ntsc, 9 / ntsc)],
+        indexed,
+        out,
+    )
+    assert _frame_numbers(out) == [3, 4, 5, 6, 7, 5, 6, 7, 8]
+
+
+def test_segment_ending_at_end_of_file_keeps_last_frame(indexed, tmp_path):
+    out = tmp_path / "processed.mov"
+    info_duration = 120 / 30
+    render_match([Segment("f30.mov", 100 / 30, info_duration)], indexed, out)
+    assert _frame_numbers(out) == list(range(100, 120))
+
+
 def _listing(d: Path) -> dict[str, float]:
     return {p.name: p.stat().st_mtime for p in d.iterdir()}
 

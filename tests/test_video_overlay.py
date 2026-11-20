@@ -19,8 +19,8 @@ from video_overlay import (
 )
 
 
-def _inp(path="a.mov", s=10.0, e=25.0, audio=True, w=1920, h=1080):
-    return RenderInput(path, s, e, audio, w, h)
+def _inp(path="a.mov", s=10.0, e=25.0, audio=True, w=1920, h=1080, fps=30.0):
+    return RenderInput(path, s, e, audio, w, h, fps)
 
 
 def test_overlay_timing():
@@ -40,9 +40,42 @@ def test_each_segment_is_a_seeked_input():
         True,
     )
     j = " ".join(cmd)
-    assert "-ss 10.000 -t 15.000 -i a.mov" in j
-    assert "-ss 0.000 -t 5.500 -i b.mov" in j
+    # Half a frame early (1/60 s at 30 fps), never before the file's start.
+    assert "-ss 9.983333 -t 15.000000 -i a.mov" in j
+    assert "-ss 0.000000 -t 5.500000 -i b.mov" in j
     assert "concat=n=2:v=1:a=1" in j
+
+
+def test_seek_uses_each_segments_own_fps():
+    cmd = build_render_command(
+        [
+            _inp(s=2 / 30, e=12 / 30, fps=30.0),
+            _inp("b.mov", 2 * 1001 / 30000, 12 * 1001 / 30000, fps=30000 / 1001),
+            _inp("c.mov", 1.0, 2.0, fps=0.0),
+        ],
+        "c.png",
+        None,
+        0,
+        None,
+        None,
+        "o.mov",
+        True,
+    )
+    j = " ".join(cmd)
+    assert "-ss 0.050000 -t 0.333333 -i a.mov" in j
+    assert "-ss 0.050050 -t 0.333667 -i b.mov" in j
+    # Unknown fps falls back to 30.
+    assert "-ss 0.983333 -t 1.000000 -i c.mov" in j
+
+
+def test_timestamps_restart_before_fps_conversion():
+    cmd = build_render_command(
+        [_inp()], "c.png", None, 0, None, None, "o.mov", True, fps=30.0
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "[0:v]setpts=PTS-STARTPTS,scale=" in fc
+    assert fc.index("setpts=PTS-STARTPTS") < fc.index("fps=30")
+    assert "[0:a]asetpts=PTS-STARTPTS," in fc
 
 
 def test_overlays_follow_concat_and_use_trimmed_time():

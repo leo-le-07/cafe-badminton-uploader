@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 FONT_PATH = Path("assets/Anton-Regular.ttf")
 OVERLAY_DURATION = 12
+DEFAULT_FPS = 30.0
 
 COLOR_YELLOW = (255, 215, 0, 255)
 COLOR_WHITE = (255, 255, 255, 255)
@@ -184,10 +185,21 @@ class RenderInput:
     has_audio: bool
     width: int
     height: int
+    fps: float = DEFAULT_FPS  # of this segment's own source
 
     @property
     def duration(self) -> float:
         return self.end - self.start
+
+    def seek_window(self) -> tuple[float, float]:
+        """Input-side `-ss` and `-t` that keep exactly the frames shown at
+        `start` up to, not including, the frame shown at `end`.
+
+        Segment edges sit on the frame grid, where rounding the time puts the
+        seek on either side of a frame's timestamp; seeking half a frame early
+        keeps every edge between two frames."""
+        half = 0.5 / (self.fps if self.fps > 0 else DEFAULT_FPS)
+        return max(0.0, self.start - half), self.duration
 
 
 def overlay_timing(total_duration: float) -> tuple[bool, float]:
@@ -219,12 +231,17 @@ def build_render_command(
     chains: list[str] = []
     concat_pads = ""
     for i, inp in enumerate(inputs):
-        args += ["-ss", f"{inp.start:.3f}", "-t", f"{inp.duration:.3f}", "-i", inp.path]
-        chains.append(f"[{i}:v]scale={width}:{height},setsar=1{fps_filter}[v{i}]")
+        seek, length = inp.seek_window()
+        args += ["-ss", f"{seek:.6f}", "-t", f"{length:.6f}", "-i", inp.path]
+        # The seek starts half a frame early; restart the timestamps at 0 so
+        # the fps filter does not repeat the first frame to fill that gap.
+        chains.append(
+            f"[{i}:v]setpts=PTS-STARTPTS,scale={width}:{height},setsar=1{fps_filter}[v{i}]"
+        )
         if inp.has_audio:
-            chains.append(f"[{i}:a]{_AUDIO_FORMAT}[a{i}]")
+            chains.append(f"[{i}:a]asetpts=PTS-STARTPTS,{_AUDIO_FORMAT}[a{i}]")
         else:
-            chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={inp.duration:.3f},{_AUDIO_FORMAT}[a{i}]")
+            chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={inp.duration:.6f},{_AUDIO_FORMAT}[a{i}]")
         concat_pads += f"[v{i}][a{i}]"
     chains.append(f"{concat_pads}concat=n={len(inputs)}:v=1:a=1[cat][aout]")
 
@@ -301,6 +318,7 @@ def render_match(
         RenderInput(
             str(source_dir / seg.source), seg.start, seg.end,
             infos[seg.source].has_audio, infos[seg.source].width, infos[seg.source].height,
+            infos[seg.source].fps or DEFAULT_FPS,
         )
         for seg in segments
     ]
