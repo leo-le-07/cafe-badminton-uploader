@@ -139,3 +139,29 @@ def test_seed_players_from_completed_runs_once(tmp_path, monkeypatch):
     seed_players_from_completed()
 
     assert load_players() == {"An": 1, "Bình": 1}
+
+
+@pytest.mark.parametrize("content", ["{ half written", '{"match": {}}'])
+def test_corrupt_job_file_gives_none_and_is_kept_aside(content):
+    workspace_dir("m1").mkdir(parents=True)
+    (workspace_dir("m1") / "job.json").write_text(content)
+    assert load_job("m1") is None
+    kept = list(workspace_dir("m1").glob("job.json.corrupt-*"))
+    assert [p.read_text() for p in kept] == [content]
+
+
+def test_list_jobs_skips_corrupt_job_and_keeps_valid_ones():
+    save_job(_job("good"))
+    workspace_dir("bad").mkdir(parents=True)
+    (workspace_dir("bad") / "job.json").write_text("{ half written")
+    assert [j.match.id for j in list_jobs()] == ["good"]
+    assert list(workspace_dir("bad").glob("job.json.corrupt-*"))
+
+
+@pytest.mark.parametrize("content", ["{ half written", '["Nam"]', '{"Nam": "x"}'])
+def test_corrupt_players_file_gives_empty_and_recording_recovers(tmp_path, content):
+    (tmp_path / "players.json").write_text(content)
+    assert load_players() == {}
+    assert [p.read_text() for p in tmp_path.glob("players.json.corrupt-*")] == [content]
+    record_players(["Nam"])
+    assert load_players() == {"Nam": 1}

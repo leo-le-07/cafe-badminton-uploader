@@ -12,6 +12,7 @@ import threading
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, TypeVar
 
 import config
 from app.models import Job, Session
@@ -26,6 +27,8 @@ JOB_FILE = "job.json"
 WORKSPACES_DIR = "workspaces"
 
 _players_lock = threading.Lock()
+
+T = TypeVar("T")
 
 
 def _write_json(path: Path, data) -> None:
@@ -49,18 +52,27 @@ def _read_json(path: Path):
         return json.load(f)
 
 
-def load_session() -> Session:
-    path = config.DATA_DIR / SESSION_FILE
+def _load(path: Path, parse: Callable[[Any], T]) -> T | None:
+    """Read and parse a JSON file; None if it is missing or unusable.
+
+    An unusable file (invalid JSON or wrong shape) is renamed to
+    `<name>.corrupt-<timestamp>` next to it, never deleted.
+    """
     if not path.exists():
-        return Session([], [], None)
+        return None
     try:
-        return Session.from_dict(_read_json(path))
+        return parse(_read_json(path))
     except (ValueError, KeyError, TypeError) as e:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        kept = path.with_name(f"{SESSION_FILE}.corrupt-{stamp}")
+        kept = path.with_name(f"{path.name}.corrupt-{stamp}")
         os.replace(path, kept)
-        logger.error(f"Session file is corrupt ({e}); kept as {kept.name}")
-        return Session([], [], None)
+        logger.warning(f"{path} is corrupt ({e}); kept as {kept.name}")
+        return None
+
+
+def load_session() -> Session:
+    session = _load(config.DATA_DIR / SESSION_FILE, Session.from_dict)
+    return session if session is not None else Session([], [], None)
 
 
 def save_session(s: Session) -> None:
@@ -72,10 +84,7 @@ def workspace_dir(match_id: str) -> Path:
 
 
 def load_job(match_id: str) -> Job | None:
-    path = workspace_dir(match_id) / JOB_FILE
-    if not path.exists():
-        return None
-    return Job.from_dict(_read_json(path))
+    return _load(workspace_dir(match_id) / JOB_FILE, Job.from_dict)
 
 
 def save_job(job: Job) -> None:
@@ -86,8 +95,8 @@ def list_jobs() -> list[Job]:
     root = config.DATA_DIR / WORKSPACES_DIR
     if not root.exists():
         return []
-    jobs = [Job.from_dict(_read_json(path)) for path in root.glob(f"*/{JOB_FILE}")]
-    return sorted(jobs, key=lambda job: job.queued_at)
+    jobs = [_load(path, Job.from_dict) for path in root.glob(f"*/{JOB_FILE}")]
+    return sorted((job for job in jobs if job), key=lambda job: job.queued_at)
 
 
 def delete_workspace(match_id: str) -> None:
@@ -98,11 +107,16 @@ def _players_path() -> Path:
     return config.DATA_DIR / PLAYERS_FILE
 
 
+def _parse_players(data) -> dict[str, int]:
+    if not isinstance(data, dict) or not all(
+        isinstance(name, str) and type(count) is int for name, count in data.items()
+    ):
+        raise TypeError("expected an object mapping names to counts")
+    return data
+
+
 def load_players() -> dict[str, int]:
-    path = _players_path()
-    if not path.exists():
-        return {}
-    return dict(_read_json(path))
+    return _load(_players_path(), _parse_players) or {}
 
 
 def record_players(names: list[str]) -> None:
