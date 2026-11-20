@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from google.auth.exceptions import RefreshError
 
+import auth_service
 from auth_service import authenticate, get_client, parse_channel_response, validate_auth
 from schemas import ChannelInfo
 
@@ -114,3 +115,66 @@ def test_validate_auth_raises_when_token_file_missing(mock_get_client):
 
     with pytest.raises(RuntimeError, match="OAuth token not found"):
         validate_auth()
+
+
+class TestAuthStatus:
+    @pytest.fixture(autouse=True)
+    def fresh_cache(self, monkeypatch):
+        self.now = 1000.0
+        monkeypatch.setattr(auth_service, "_clock", lambda: self.now)
+        auth_service.clear_auth_status_cache()
+        yield
+        auth_service.clear_auth_status_cache()
+
+    @staticmethod
+    def channel_client():
+        youtube = MagicMock()
+        youtube.channels.return_value.list.return_value.execute.return_value = {
+            "items": [{"id": "UC123", "snippet": {"title": "Cafe Badminton"}}]
+        }
+        return youtube
+
+    def test_reports_channel_when_token_works(self):
+        youtube = self.channel_client()
+        with patch("auth_service.get_client", return_value=youtube):
+            assert auth_service.auth_status() == {
+                "ok": True,
+                "channel": "Cafe Badminton",
+            }
+        youtube.channels.return_value.list.assert_called_once_with(
+            mine=True, part="snippet"
+        )
+
+    @pytest.mark.parametrize(
+        "error", [RuntimeError("OAuth token not found."), RefreshError("expired")]
+    )
+    def test_reports_signed_out_instead_of_raising(self, error):
+        with patch("auth_service.get_client", side_effect=error):
+            assert auth_service.auth_status() == {"ok": False, "channel": None}
+
+    def test_reports_signed_out_when_api_call_fails(self):
+        youtube = MagicMock()
+        youtube.channels.return_value.list.return_value.execute.side_effect = (
+            RefreshError("revoked")
+        )
+        with patch("auth_service.get_client", return_value=youtube):
+            assert auth_service.auth_status() == {"ok": False, "channel": None}
+
+    def test_result_is_cached_for_60_seconds(self):
+        with patch("auth_service.get_client", side_effect=RuntimeError("no token")):
+            auth_service.auth_status()
+        with patch(
+            "auth_service.get_client", return_value=self.channel_client()
+        ) as get_client:
+            self.now += 59
+            assert auth_service.auth_status()["ok"] is False
+            get_client.assert_not_called()
+            self.now += 2
+            assert auth_service.auth_status()["ok"] is True
+
+    def test_clearing_the_cache_checks_again(self):
+        with patch("auth_service.get_client", side_effect=RuntimeError("no token")):
+            auth_service.auth_status()
+        auth_service.clear_auth_status_cache()
+        with patch("auth_service.get_client", return_value=self.channel_client()):
+            assert auth_service.auth_status()["ok"] is True

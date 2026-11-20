@@ -1,7 +1,12 @@
 import argparse
+import os
 import sys
+import threading
+import webbrowser
 
 import config
+from app import server, store
+from app.jobs import JobQueue
 from logger import get_logger
 from auth_service import authenticate
 from custom_exceptions import MissingThumbnailDataError
@@ -9,6 +14,29 @@ from rethumbnail import rethumbnail_video, scan_completed_workspaces
 
 
 logger = get_logger(__name__)
+
+HOST = "127.0.0.1"
+BROWSER_DELAY_SECONDS = 1.0
+
+
+def serve():
+    """Run the editor: background job queue plus the local web server."""
+    store.seed_players_from_completed()
+    queue = JobQueue()
+    queue.start()
+    url = f"http://{HOST}:{config.APP_PORT}/"
+    if os.environ.get("CAFE_NO_BROWSER") != "1":
+        # Give the server a moment to bind before the page loads.
+        opener = threading.Timer(BROWSER_DELAY_SECONDS, webbrowser.open, args=(url,))
+        opener.daemon = True
+        opener.start()
+    logger.info(f"Editor running at {url}")
+    try:
+        server.create_app(queue).run(
+            host=HOST, port=config.APP_PORT, threaded=True, use_reloader=False
+        )
+    finally:
+        queue.stop()
 
 
 def cmd_auth(args):
@@ -39,7 +67,7 @@ def cmd_rethumbnail(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Cafe Badminton uploader",
+        description="Cafe Badminton uploader. Without a command, opens the match editor.",
     )
 
     subparsers = parser.add_subparsers(
@@ -67,8 +95,8 @@ def main():
     args = parser.parse_args()
 
     if not args.command:
-        parser.print_help()
-        sys.exit(1)
+        serve()
+        return
 
     args.func(args)
 
