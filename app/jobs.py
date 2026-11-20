@@ -3,7 +3,8 @@
 Locking: `self._lock` guards `_jobs`, `_executing` and `_quota_until`, and every
 `store.save_job` call (so the worker and API threads never write the same
 job.json at once). Pipeline steps run outside the lock; while a step runs,
-`_executing` names its match so `unqueue` can refuse it.
+`_executing` names its match so `unqueue` can refuse it and no second
+caller picks work until it ends.
 """
 
 import threading
@@ -26,7 +27,11 @@ AUTH_MESSAGE = (
     "Hãy đăng nhập lại rồi bấm Thử lại."
 )
 IDLE_SECONDS = 1.0
-STOP_TIMEOUT_SECONDS = 5.0
+STOP_TIMEOUT_SECONDS = 30.0
+
+
+class _Cancelled(Exception):
+    """Raised from the progress callback to abort a step when stop() is called."""
 
 
 def _copy(job: Job) -> Job:
@@ -45,12 +50,24 @@ class JobQueue:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
+        # Finished jobs live in COMPLETED_DIR; they stay locked and listed so
+        # a finished match can never be queued (and uploaded) again.
+        archived = {job.match.id: job for job in store.list_archived_jobs()}
+        jobs = list(archived.values())
         for job in store.list_jobs():
+            if job.match.id in archived:
+                logger.warning(
+                    f"Match {job.match.id} is already archived as done; "
+                    f"ignoring its leftover workspace {store.workspace_dir(job.match.id)}"
+                )
+                continue
             if job.status == "done":
                 # Only an interrupted cleanup leaves a done job outside
                 # COMPLETED_DIR: finish archiving it.
                 job.status = "queued"
                 job.step = "cleanup"
+            jobs.append(job)
+        for job in sorted(jobs, key=lambda job: job.queued_at):
             self._jobs[job.match.id] = job
 
     # ---- API-side operations -------------------------------------------------
@@ -153,6 +170,15 @@ class JobQueue:
         error: Exception | None = None
         try:
             pipeline.run_step(work, step, lambda p: self._report_progress(match_id, p))
+        except _Cancelled:
+            with self._lock:
+                self._executing = None
+                job = self._jobs[match_id]
+                job.status = "queued"
+                job.progress = 0.0
+                store.save_job(job)
+            logger.info(f"{match_id}: step {step} stopped; it will resume on next start")
+            return True
         except Exception as e:
             error = e
         except BaseException:
@@ -166,18 +192,23 @@ class JobQueue:
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
-            return
+            if not self._stop.is_set():
+                return  # already running
+            raise RuntimeError("The previous worker is still finishing a step")
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="job-queue", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the worker loop; a step already running is left to finish (or
-        to be resumed on next start) if it takes longer than the timeout."""
+        """Stop the worker loop. A running step is aborted at its next progress
+        report (encode and upload report often) and resumes on next start; a
+        step that does not report keeps the worker alive past the timeout, and
+        start() refuses until it ends."""
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=STOP_TIMEOUT_SECONDS)
-            self._thread = None
+            if not self._thread.is_alive():
+                self._thread = None
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -192,6 +223,8 @@ class JobQueue:
     # ---- helpers (caller holds the lock) --------------------------------------
 
     def _next_runnable(self, now: float) -> Job | None:
+        if self._executing is not None:
+            return None
         for job in self._jobs.values():
             if job.status in ("queued", "running"):
                 return job
@@ -248,6 +281,8 @@ class JobQueue:
         store.save_job(job)
 
     def _report_progress(self, match_id: str, percent: float) -> None:
+        if self._stop.is_set():
+            raise _Cancelled()
         value = float(int(max(0.0, min(100.0, percent))))
         with self._lock:
             job = self._jobs.get(match_id)

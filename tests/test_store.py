@@ -165,3 +165,41 @@ def test_corrupt_players_file_gives_empty_and_recording_recovers(tmp_path, conte
     assert [p.read_text() for p in tmp_path.glob("players.json.corrupt-*")] == [content]
     record_players(["Nam"])
     assert load_players() == {"Nam": 1}
+
+
+def _archived(completed, name, job_data):
+    folder = completed / name
+    folder.mkdir(parents=True)
+    (folder / "job.json").write_text(job_data, encoding="utf-8")
+    return folder
+
+
+def test_list_archived_jobs_returns_only_done_jobs_and_never_touches_files(
+    tmp_path, monkeypatch
+):
+    from app.store import list_archived_jobs
+
+    completed = tmp_path / "completed"
+    monkeypatch.setattr(config, "COMPLETED_DIR", completed)
+    done = _job("m1")
+    done.status = "done"
+    _archived(completed, "2026-11-20_m1", json.dumps(done.to_dict()))
+    _archived(completed, "2026-11-20_m2", json.dumps(_job("m2").to_dict()))
+    broken = _archived(completed, "2026-11-20_m3", "{not json")
+    legacy = completed / "ms_LeovsKhanh"  # pre-rewrite workspace: no job.json
+    legacy.mkdir()
+    (legacy / "upload.json").write_text("{}", encoding="utf-8")
+    before = sorted(p.relative_to(completed) for p in completed.rglob("*"))
+
+    jobs = list_archived_jobs()
+
+    assert [job.match.id for job in jobs] == ["m1"]
+    assert sorted(p.relative_to(completed) for p in completed.rglob("*")) == before
+    assert (broken / "job.json").read_text(encoding="utf-8") == "{not json"
+
+
+def test_list_archived_jobs_without_completed_dir(tmp_path, monkeypatch):
+    from app.store import list_archived_jobs
+
+    monkeypatch.setattr(config, "COMPLETED_DIR", tmp_path / "missing")
+    assert list_archived_jobs() == []

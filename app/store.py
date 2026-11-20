@@ -99,6 +99,27 @@ def list_jobs() -> list[Job]:
     return sorted((job for job in jobs if job), key=lambda job: job.queued_at)
 
 
+def list_archived_jobs() -> list[Job]:
+    """Finished jobs archived in COMPLETED_DIR, sorted by queued_at.
+
+    Read-only: COMPLETED_DIR also holds workspaces from before job.json
+    existed and files the user put there, so a missing or unreadable job.json
+    is skipped and nothing is ever renamed.
+    """
+    root = config.COMPLETED_DIR
+    if not root.exists():
+        return []
+    jobs = []
+    for path in root.glob(f"*/{JOB_FILE}"):
+        try:
+            job = Job.from_dict(_read_json(path))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if job.status == "done":
+            jobs.append(job)
+    return sorted(jobs, key=lambda job: job.queued_at)
+
+
 def delete_workspace(match_id: str) -> None:
     shutil.rmtree(workspace_dir(match_id), ignore_errors=True)
 

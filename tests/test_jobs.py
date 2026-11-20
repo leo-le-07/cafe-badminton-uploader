@@ -1,3 +1,5 @@
+import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +14,7 @@ from app.models import Job, Match, Segment
 from custom_exceptions import AuthRequiredError, QuotaExceededError
 
 HOUR = 3600
+real_run_step = pipeline.run_step
 
 
 class FakeClock:
@@ -374,13 +377,92 @@ def test_restart_resumes_unfinished_jobs(fake, clock):
     assert _status(queue, "m2")["status"] == "done"
 
 
+def _archive_job(id, queued_at="2026-11-20T09:00:00", status="done"):
+    """A job.json as the cleanup step leaves it inside COMPLETED_DIR."""
+    job = Job(
+        match=_match(id),
+        recorded_date="2026-11-19",
+        status=status,
+        step="cleanup",
+        progress=100.0,
+        error=None,
+        youtube_link=f"https://youtu.be/vid-{id}",
+        queued_at=queued_at,
+    )
+    folder = config.COMPLETED_DIR / f"2026-11-19_{id}"
+    folder.mkdir(parents=True)
+    (folder / store.JOB_FILE).write_text(json.dumps(job.to_dict()), encoding="utf-8")
+    return folder
+
+
 def test_restart_does_not_rerun_finished_or_failed_jobs(fake, clock):
+    _archive_job("m0")
     _write_job("m1", "error", "encode", "2026-11-20T10:00:00")
 
     queue = JobQueue(clock=clock)
 
     assert queue.run_once() is False
+    assert fake.calls == []
+    assert _status(queue, "m0")["status"] == "done"
     assert _status(queue, "m1")["status"] == "error"
+
+
+def test_finished_job_stays_done_and_locked_after_restart(fake, clock):
+    def real_cleanup(job, step, progress):
+        if step == "cleanup":
+            real_run_step(job, step, progress)
+
+    fake.during = real_cleanup
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")])
+    _drain(queue)
+    assert not store.workspace_dir("m1").exists()
+
+    restarted = JobQueue(clock=clock)
+
+    job = _status(restarted, "m1")
+    assert job["status"] == "done"
+    assert job["youtube_link"] == "https://youtu.be/vid-m1"
+    assert restarted.locked_match_ids() == {"m1"}
+    with pytest.raises(ValueError):
+        restarted.enqueue([_match("m1")])
+    with pytest.raises(ValueError):
+        restarted.retry("m1")
+    with pytest.raises(ValueError):
+        restarted.unqueue("m1")
+    assert restarted.run_once() is False
+
+
+def test_killed_after_archive_move_is_done_after_restart(fake, clock):
+    # The workspace was already moved into COMPLETED_DIR; nothing is left in
+    # DATA_DIR/workspaces.
+    _archive_job("m1")
+
+    queue = JobQueue(clock=clock)
+
+    assert _status(queue, "m1")["status"] == "done"
+    assert "m1" in queue.locked_match_ids()
+    assert queue.run_once() is False
+
+
+def test_archived_done_job_wins_over_stray_workspace(fake, clock):
+    _archive_job("m1")
+    _write_job("m1", "running", "set_thumbnail", "2026-11-20T10:00:00")
+
+    queue = JobQueue(clock=clock)
+
+    assert [j["status"] for j in queue.snapshot()] == ["done"]
+    assert queue.run_once() is False
+    assert store.workspace_dir("m1").exists()  # left alone
+
+
+def test_archived_jobs_and_live_jobs_keep_queue_order(fake, clock):
+    _archive_job("old", queued_at="2026-11-20T09:00:00")
+    _write_job("new", "queued", "metadata", "2026-11-20T10:00:00")
+
+    queue = JobQueue(clock=clock)
+
+    assert [j["match"]["id"] for j in queue.snapshot()] == ["old", "new"]
 
 
 def test_unqueue_removes_workspace_and_returns_match(fake, clock):
@@ -456,3 +538,138 @@ def test_start_and_stop_do_not_hang(fake):
     queue.enqueue([_match("m1")])
     queue.start()
     queue.stop()
+
+
+def _run_in_thread(target):
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    return thread
+
+
+def test_second_caller_cannot_pick_work_while_a_step_executes(fake, clock):
+    started, release = threading.Event(), threading.Event()
+
+    def during(job, step, progress):
+        if job.match.id == "m1" and step == "metadata":
+            started.set()
+            assert release.wait(5)
+
+    fake.during = during
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1"), _match("m2")])
+
+    worker = _run_in_thread(queue.run_once)
+    assert started.wait(5)
+    try:
+        assert queue.run_once() is False
+    finally:
+        release.set()
+        worker.join(5)
+
+    assert fake.calls == [("m1", "metadata")]
+    assert queue.run_once() is True
+    assert fake.calls[-1] == ("m1", "select_thumbnail")
+
+
+def test_stop_aborts_running_step_and_leaves_job_queued_at_that_step(fake):
+    started = threading.Event()
+    aborted = []
+
+    def during(job, step, progress):
+        if step != "encode":
+            return
+        started.set()
+        assert queue._stop.wait(5)  # stop() was called
+        try:
+            progress(10.0)
+        except Exception as e:
+            aborted.append(type(e).__name__)
+            raise
+        raise AssertionError("progress did not abort the step")
+
+    fake.during = during
+    queue = JobQueue()
+    queue.enqueue([_match("m1")])
+    queue.start()
+    assert started.wait(5)
+
+    queue.stop()
+
+    assert aborted
+    job = _status(queue, "m1")
+    assert (job["status"], job["step"], job["error"]) == ("queued", "encode", None)
+    on_disk = store.load_job("m1")
+    assert (on_disk.status, on_disk.step, on_disk.error) == ("queued", "encode", None)
+    assert fake.steps_of("m1")[-1] == "encode"
+
+
+def test_start_twice_keeps_one_worker_and_restart_after_stop_works(fake):
+    started, release = threading.Event(), threading.Event()
+
+    def during(job, step, progress):
+        if step == "metadata":
+            started.set()
+            assert release.wait(5)
+
+    fake.during = during
+    queue = JobQueue()
+    queue.enqueue([_match("m1")])
+    queue.start()
+    assert started.wait(5)
+    first = queue._thread
+
+    queue.start()
+
+    assert queue._thread is first
+    assert [t for t in threading.enumerate() if t.name == "job-queue"] == [first]
+    release.set()
+    queue.stop()
+    assert not first.is_alive()
+
+    queue.start()
+    assert queue._thread is not first
+    queue.stop()
+
+
+def test_start_refuses_while_a_stopped_worker_is_still_finishing(fake, monkeypatch):
+    import app.jobs
+
+    started, release = threading.Event(), threading.Event()
+
+    def during(job, step, progress):
+        if step == "metadata":
+            started.set()
+            assert release.wait(5)  # ignores the stop request (no progress)
+
+    fake.during = during
+    monkeypatch.setattr(app.jobs, "STOP_TIMEOUT_SECONDS", 0.01)
+    queue = JobQueue()
+    queue.enqueue([_match("m1")])
+    queue.start()
+    assert started.wait(5)
+    queue.stop()  # times out: the step is still running
+    old = queue._thread
+    try:
+        assert old is not None and old.is_alive()
+        with pytest.raises(RuntimeError):
+            queue.start()
+    finally:
+        release.set()
+        if old is not None:
+            old.join(5)
+
+
+def test_base_exception_in_step_does_not_leave_job_executing(fake, clock):
+    class Abort(BaseException):
+        pass
+
+    fake.fail[("m1", "metadata")] = Abort()
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")])
+
+    with pytest.raises(Abort):
+        queue.run_once()
+    del fake.fail[("m1", "metadata")]
+
+    assert queue.run_once() is True
+    assert fake.calls == [("m1", "metadata"), ("m1", "metadata")]
