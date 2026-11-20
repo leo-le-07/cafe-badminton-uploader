@@ -1,12 +1,15 @@
 import json
 import subprocess
 import tempfile
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 import config
-import utils
+import media_probe
+from app.models import Segment
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -173,104 +176,166 @@ def _get_video_duration(video_path: str) -> float:
     return float(json.loads(result.stdout)["format"]["duration"])
 
 
-def _run_ffmpeg_overlay(
-    video_path: str,
+@dataclass(frozen=True)
+class RenderInput:
+    path: str
+    start: float
+    end: float
+    has_audio: bool
+    width: int
+    height: int
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
+
+
+def overlay_timing(total_duration: float) -> tuple[bool, float]:
+    """Whether the outro overlay is shown and when it starts, in output time."""
+    return total_duration > 2 * OVERLAY_DURATION, total_duration - OVERLAY_DURATION
+
+
+_AUDIO_FORMAT = "aformat=sample_rates=48000:channel_layouts=stereo"
+
+
+def build_render_command(
+    inputs: list[RenderInput],
     cafe_png: str,
     thanks_png: str | None,
     thanks_start: float,
+    logo_path: str | None,
+    logo_size: int | None,
     output_path: str,
     use_hardware: bool,
-    logo_path: str | None = None,
-    logo_size: int | None = None,
-) -> subprocess.CompletedProcess:
+    fps: float | None = None,
+) -> list[str]:
+    """One ffmpeg pass: trim each segment, normalise it to the first segment's
+    size (and `fps` when given), concatenate, then burn in the overlays."""
     encoder_args = ["-c:v", "h264_videotoolbox"] if use_hardware else ["-c:v", "libx264", "-preset", "ultrafast"]
+    width, height = inputs[0].width, inputs[0].height
+    fps_filter = f",fps={fps:.10g}" if fps else ""
 
-    inputs = ["-i", video_path, "-i", cafe_png]
+    args: list[str] = []
+    chains: list[str] = []
+    concat_pads = ""
+    for i, inp in enumerate(inputs):
+        args += ["-ss", f"{inp.start:.3f}", "-t", f"{inp.duration:.3f}", "-i", inp.path]
+        chains.append(f"[{i}:v]scale={width}:{height},setsar=1{fps_filter}[v{i}]")
+        if inp.has_audio:
+            chains.append(f"[{i}:a]{_AUDIO_FORMAT}[a{i}]")
+        else:
+            chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={inp.duration:.3f},{_AUDIO_FORMAT}[a{i}]")
+        concat_pads += f"[v{i}][a{i}]"
+    chains.append(f"{concat_pads}concat=n={len(inputs)}:v=1:a=1[cat][aout]")
+
+    idx = len(inputs)
+    args += ["-i", cafe_png]
+    chains.append(f"[cat][{idx}:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='lte(t,{OVERLAY_DURATION})'[ov1]")
+    last = "ov1"
     if thanks_png:
-        inputs += ["-i", thanks_png]
-    if logo_path:
-        inputs += ["-i", logo_path]
-
-    logo_idx = (2 if not thanks_png else 3)
-
-    if thanks_png:
-        text_chain = (
-            f"[0:v][1:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='lte(t,{OVERLAY_DURATION})'[v1];"
-            f"[v1][2:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='gte(t,{thanks_start:.3f})'[v2]"
-        )
-    else:
-        text_chain = (
-            f"[0:v][1:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='lte(t,{OVERLAY_DURATION})'[v2]"
-        )
-
+        idx += 1
+        args += ["-i", thanks_png]
+        chains.append(f"[{last}][{idx}:v]overlay=x=(W-w)/2:y=(H-h)/2:enable='gte(t,{thanks_start:.3f})'[ov2]")
+        last = "ov2"
     if logo_path and logo_size:
-        filter_complex = (
-            f"{text_chain};"
-            f"[{logo_idx}:v]scale={logo_size}:-1,format=rgba[logo];"
-            f"[v2][logo]overlay=x=main_w-overlay_w-20:y=20[out]"
-        )
-    else:
-        filter_complex = text_chain.replace("[v2]", "[out]")
+        idx += 1
+        args += ["-i", logo_path]
+        chains.append(f"[{idx}:v]scale={logo_size}:-1,format=rgba[logo]")
+        chains.append(f"[{last}][logo]overlay=x=main_w-overlay_w-20:y=20[ov3]")
+        last = "ov3"
 
-    cmd = (
-        ["ffmpeg", "-y"]
-        + inputs
-        + ["-filter_complex", filter_complex, "-map", "[out]", "-map", "0:a"]
+    return (
+        ["ffmpeg", "-y", "-nostats", "-progress", "pipe:1"]
+        + args
+        + ["-filter_complex", ";".join(chains), "-map", f"[{last}]", "-map", "[aout]"]
         + encoder_args
-        + ["-c:a", "copy", output_path]
+        + ["-c:a", "aac", "-b:a", "192k", "-f", "mov", output_path]
     )
 
-    return subprocess.run(cmd, capture_output=True)
+
+def _run_ffmpeg(cmd: list[str], total_duration: float, progress: Callable[[float], None] | None) -> tuple[int, str]:
+    """Runs ffmpeg, reporting percent done from `-progress` output. Returns
+    (returncode, stderr)."""
+    with tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err, stdin=subprocess.DEVNULL, text=True)
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            key, _, value = line.strip().partition("=")
+            if key == "out_time_us" and progress and value.lstrip("-").isdigit() and total_duration > 0:
+                progress(max(0.0, min(100.0, int(value) / 1e6 / total_duration * 100)))
+        returncode = proc.wait()
+        err.seek(0)
+        return returncode, err.read().decode(errors="replace")
 
 
-def add_video_overlays(video_path: str, output_path: str | None = None) -> str:
-    if not FONT_PATH.exists():
-        raise FileNotFoundError(f"Font not found: {FONT_PATH}. Download Anton-Regular.ttf from Google Fonts.")
+def render_match(
+    segments: list[Segment],
+    source_dir: Path,
+    output_path: Path,
+    progress: Callable[[float], None] | None = None,
+) -> str:
+    """Cuts, joins and overlays `segments` into `output_path` with a single
+    encode. Skips the work when `output_path` already exists."""
+    if output_path.exists():
+        logger.info(f"Processed video already exists, skipping: {output_path}")
+        return str(output_path)
+    if not segments:
+        raise ValueError("A match needs at least one segment")
 
-    path = Path(video_path)
+    infos = {}
+    for name in {seg.source for seg in segments}:
+        try:
+            infos[name] = media_probe.probe(source_dir / name)
+        except (OSError, ValueError, subprocess.CalledProcessError) as e:
+            raise RuntimeError(f"Cannot read source {name}: {e}") from e
 
-    if output_path is None:
-        resolved_output = utils.get_processed_video_path(path)
-    else:
-        resolved_output = Path(output_path)
-
-    if resolved_output.exists():
-        logger.info(f"Processed video already exists, skipping: {resolved_output}")
-        return str(resolved_output)
-
-    resolved_output.parent.mkdir(parents=True, exist_ok=True)
-
-    width, height = get_video_dimensions(video_path)
-    duration = _get_video_duration(video_path)
-
-    cafe_img = render_cafe_game_overlay(width, height)
-    thanks_img = render_thanks_overlay(width, height) if duration > 24 else None
-    thanks_start = duration - OVERLAY_DURATION
+    inputs = [
+        RenderInput(
+            str(source_dir / seg.source), seg.start, seg.end,
+            infos[seg.source].has_audio, infos[seg.source].width, infos[seg.source].height,
+        )
+        for seg in segments
+    ]
+    width, height = inputs[0].width, inputs[0].height
+    fps = infos[segments[0].source].fps
+    total_duration = sum(inp.duration for inp in inputs)
+    show_thanks, thanks_start = overlay_timing(total_duration)
 
     logo_path = str(config.LOGO_PATH) if config.LOGO_PATH.exists() else None
     logo_size = int(width * 0.1) if logo_path else None
     if not logo_path:
         logger.warning(f"Logo not found at {config.LOGO_PATH}, skipping watermark")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        cafe_png = str(Path(tmp_dir) / "cafe_overlay.png")
-        cafe_img.save(cafe_png)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    partial = output_path.with_name(output_path.name + ".partial")
 
-        thanks_png = None
-        if thanks_img is not None:
-            thanks_png = str(Path(tmp_dir) / "thanks_overlay.png")
-            thanks_img.save(thanks_png)
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cafe_png = str(Path(tmp_dir) / "cafe_overlay.png")
+            render_cafe_game_overlay(width, height).save(cafe_png)
+            thanks_png = None
+            if show_thanks:
+                thanks_png = str(Path(tmp_dir) / "thanks_overlay.png")
+                render_thanks_overlay(width, height).save(thanks_png)
 
-        result = _run_ffmpeg_overlay(video_path, cafe_png, thanks_png, thanks_start, str(resolved_output), use_hardware=True, logo_path=logo_path, logo_size=logo_size)
+            for use_hardware in (True, False):
+                cmd = build_render_command(
+                    inputs, cafe_png, thanks_png, thanks_start, logo_path, logo_size,
+                    str(partial), use_hardware, fps=fps,
+                )
+                returncode, stderr = _run_ffmpeg(cmd, total_duration, progress)
+                if returncode == 0:
+                    break
+                if use_hardware:
+                    logger.warning("Hardware encoder failed, retrying with libx264...")
+            else:
+                raise RuntimeError(f"FFmpeg failed with code {returncode}:\n{stderr}")
 
-        if result.returncode != 0:
-            logger.warning("Hardware encoder failed, retrying with libx264...")
-            result = _run_ffmpeg_overlay(video_path, cafe_png, thanks_png, thanks_start, str(resolved_output), use_hardware=False, logo_path=logo_path, logo_size=logo_size)
+        partial.replace(output_path)
+    finally:
+        partial.unlink(missing_ok=True)
 
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"FFmpeg failed with code {result.returncode}:\n{result.stderr.decode()}"
-            )
-
-    logger.info(f"Video overlays applied: {resolved_output}")
-    return str(resolved_output)
+    if progress:
+        progress(100.0)
+    logger.info(f"Match rendered: {output_path}")
+    return str(output_path)

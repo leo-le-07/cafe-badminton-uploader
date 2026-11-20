@@ -6,89 +6,120 @@ import pytest
 from PIL import Image, ImageDraw
 
 from video_overlay import (
+    RenderInput,
+    build_render_command,
     _find_font_size_for_width,
     _get_font,
     _get_video_duration,
     _measure_text,
-    _run_ffmpeg_overlay,
-    add_video_overlays,
     get_video_dimensions,
+    overlay_timing,
     render_cafe_game_overlay,
     render_thanks_overlay,
 )
 
 
-def _make_result(returncode=0):
-    r = MagicMock(spec=subprocess.CompletedProcess)
-    r.returncode = returncode
-    return r
+def _inp(path="a.mov", s=10.0, e=25.0, audio=True, w=1920, h=1080):
+    return RenderInput(path, s, e, audio, w, h)
 
 
-class TestRunFfmpegOverlay:
-    def test_logo_added_as_input_with_thanks(self):
-        with patch("subprocess.run", return_value=_make_result()) as mock_run:
-            _run_ffmpeg_overlay(
-                "video.mp4",
-                "cafe.png",
-                "thanks.png",
-                60.0,
-                "out.mov",
-                use_hardware=False,
-                logo_path="logo.png",
-                logo_size=192,
-            )
-            cmd = mock_run.call_args[0][0]
-            assert "logo.png" in cmd
-            assert cmd.index("logo.png") > cmd.index("thanks.png")
+def test_overlay_timing():
+    assert overlay_timing(100.0) == (True, 88.0)
+    assert overlay_timing(24.0) == (False, 12.0)
 
-    def test_logo_added_as_input_without_thanks(self):
-        with patch("subprocess.run", return_value=_make_result()) as mock_run:
-            _run_ffmpeg_overlay(
-                "video.mp4",
-                "cafe.png",
-                None,
-                60.0,
-                "out.mov",
-                use_hardware=False,
-                logo_path="logo.png",
-                logo_size=192,
-            )
-            cmd = mock_run.call_args[0][0]
-            assert "logo.png" in cmd
 
-    def test_filter_complex_contains_logo_scale_and_overlay(self):
-        with patch("subprocess.run", return_value=_make_result()) as mock_run:
-            _run_ffmpeg_overlay(
-                "video.mp4",
-                "cafe.png",
-                "thanks.png",
-                60.0,
-                "out.mov",
-                use_hardware=False,
-                logo_path="logo.png",
-                logo_size=192,
-            )
-            cmd = mock_run.call_args[0][0]
-            fc = cmd[cmd.index("-filter_complex") + 1]
-            assert "scale=192:-1" in fc
-            assert "format=rgba" in fc
-            assert "main_w-overlay_w-20" in fc
-            assert "y=20" in fc
+def test_each_segment_is_a_seeked_input():
+    cmd = build_render_command(
+        [_inp(s=10, e=25), _inp("b.mov", 0, 5.5)],
+        "c.png",
+        None,
+        0,
+        None,
+        None,
+        "o.mov",
+        True,
+    )
+    j = " ".join(cmd)
+    assert "-ss 10.000 -t 15.000 -i a.mov" in j
+    assert "-ss 0.000 -t 5.500 -i b.mov" in j
+    assert "concat=n=2:v=1:a=1" in j
 
-    def test_no_logo_omits_logo_from_filter(self):
-        with patch("subprocess.run", return_value=_make_result()) as mock_run:
-            _run_ffmpeg_overlay(
-                "video.mp4",
-                "cafe.png",
-                None,
-                60.0,
-                "out.mov",
-                use_hardware=False,
-            )
-            cmd = mock_run.call_args[0][0]
-            fc = cmd[cmd.index("-filter_complex") + 1]
-            assert "scale=" not in fc
-            assert "format=rgba" not in fc
+
+def test_overlays_follow_concat_and_use_trimmed_time():
+    cmd = build_render_command(
+        [_inp(), _inp()], "c.png", "t.png", 18.0, "logo.png", 192, "o.mov", True
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert fc.index("concat=") < fc.index("overlay=")
+    assert "enable='lte(t,12)'" in fc and "enable='gte(t,18.000)'" in fc
+    assert "scale=192:-1" in fc
+
+
+def test_audio_is_reencoded_not_copied():
+    cmd = build_render_command([_inp()], "c.png", None, 0, None, None, "o.mov", True)
+    assert cmd[cmd.index("-c:a") + 1] == "aac"
+    assert cmd[cmd.index("-b:a") + 1] == "192k"
+
+
+def test_segment_without_audio_gets_silence():
+    cmd = build_render_command(
+        [_inp(audio=False), _inp()], "c.png", None, 0, None, None, "o.mov", True
+    )
+    assert "anullsrc" in " ".join(cmd)
+
+
+def test_mismatched_resolution_is_scaled_to_first_segment():
+    cmd = build_render_command(
+        [_inp(w=1920, h=1080), _inp(w=1280, h=720)],
+        "c.png",
+        None,
+        0,
+        None,
+        None,
+        "o.mov",
+        True,
+    )
+    assert "scale=1920:1080" in cmd[cmd.index("-filter_complex") + 1]
+
+
+def test_segments_are_converted_to_given_fps():
+    cmd = build_render_command(
+        [_inp(), _inp()],
+        "c.png",
+        None,
+        0,
+        None,
+        None,
+        "o.mov",
+        True,
+        fps=29.97002997002997,
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert fc.count("fps=29.97002997") == 2
+
+
+def test_encoder_choice():
+    hw = build_render_command([_inp()], "c.png", None, 0, None, None, "o.mov", True)
+    sw = build_render_command([_inp()], "c.png", None, 0, None, None, "o.mov", False)
+    assert "h264_videotoolbox" in hw and "libx264" in sw
+
+
+def test_no_logo_omits_logo_input_and_filter():
+    cmd = build_render_command(
+        [_inp()], "c.png", "t.png", 18.0, None, None, "o.mov", True
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "logo" not in " ".join(cmd)
+    assert "format=rgba" not in fc
+
+
+def test_logo_is_top_right_watermark():
+    cmd = build_render_command(
+        [_inp()], "c.png", None, 0, "logo.png", 192, "o.mov", True
+    )
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "main_w-overlay_w-20:y=20" in fc
+    assert cmd[-1] == "o.mov"
 
 
 class TestRenderCafeGameOverlay:
@@ -161,62 +192,3 @@ class TestGetVideoDuration:
         with patch("video_overlay.subprocess.run", return_value=mock_result):
             duration = _get_video_duration("video.mov")
         assert duration == pytest.approx(3723.456)
-
-
-class TestAddVideoOverlaysFallback:
-    def test_hardware_failure_falls_back_to_software_encoder(self, tmp_path):
-        video = tmp_path / "match.mov"
-        video.write_bytes(b"fake")
-        output = tmp_path / "match_ws" / "processed.mov"
-
-        fail = MagicMock(
-            spec=subprocess.CompletedProcess, returncode=1, stderr=b"hw fail"
-        )
-        success = MagicMock(spec=subprocess.CompletedProcess, returncode=0)
-
-        with (
-            patch("video_overlay.get_video_dimensions", return_value=(1280, 720)),
-            patch("video_overlay._get_video_duration", return_value=30.0),
-            patch("utils.get_processed_video_path", return_value=output),
-            patch("video_overlay.subprocess.run", side_effect=[fail, success]),
-        ):
-            result = add_video_overlays(str(video))
-
-        assert result == str(output)
-
-    def test_both_encoders_fail_raises_runtime_error(self, tmp_path):
-        video = tmp_path / "match.mov"
-        video.write_bytes(b"fake")
-        output = tmp_path / "match_ws" / "processed.mov"
-
-        fail = MagicMock(spec=subprocess.CompletedProcess, returncode=1, stderr=b"fail")
-
-        with (
-            patch("video_overlay.get_video_dimensions", return_value=(1280, 720)),
-            patch("video_overlay._get_video_duration", return_value=30.0),
-            patch("utils.get_processed_video_path", return_value=output),
-            patch("video_overlay.subprocess.run", return_value=fail),
-        ):
-            with pytest.raises(RuntimeError, match="FFmpeg failed"):
-                add_video_overlays(str(video))
-
-
-class TestAddVideoOverlaysIdempotency:
-    def test_skips_when_processed_already_exists(self, tmp_path):
-        video = tmp_path / "match.mp4"
-        video.touch()
-
-        workspace = tmp_path / ".cafe_game_workspace" / "match"
-        workspace.mkdir(parents=True)
-        processed = workspace / "processed.mov"
-        processed.touch()
-
-        with (
-            patch("video_overlay.get_video_dimensions"),
-            patch("video_overlay._run_ffmpeg_overlay") as mock_ffmpeg,
-            patch("utils.get_processed_video_path", return_value=processed),
-        ):
-            result = add_video_overlays(str(video))
-
-        mock_ffmpeg.assert_not_called()
-        assert result == str(processed)
