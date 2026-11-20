@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { connectionLost, goLabel, jobPrivacy, rowActions } from '../../app/static/js/queue.js';
+import { connectionLost, goBlocked, goLabel, jobPrivacy, rowActions } from '../../app/static/js/queue.js';
 
 test('mất kết nối chỉ báo sau 2 lần hỏi hàng đợi thất bại liên tiếp', () => {
   assert.equal(connectionLost(0), false);
@@ -32,4 +32,15 @@ test('nhãn privacy của một trận theo mode của nó, thiếu thì private
   assert.equal(jobPrivacy({}, modes), 'private');
   assert.equal(jobPrivacy({ mode: 'prod' }, modes), 'private');
   assert.equal(jobPrivacy({ mode: 'toString' }, modes), 'private');
+});
+
+test('không upload được khi mode đang được lưu hoặc vừa đổi thất bại', () => {
+  const ok = { busy: false, n: 2, signedIn: true, stale: false, modeBusy: false, modeFailed: false };
+  assert.equal(goBlocked(ok), false);
+  assert.equal(goBlocked({ ...ok, modeBusy: true }), true);
+  assert.equal(goBlocked({ ...ok, modeFailed: true }), true);
+  assert.equal(goBlocked({ ...ok, n: 0 }), true);
+  assert.equal(goBlocked({ ...ok, signedIn: false }), true);
+  assert.equal(goBlocked({ ...ok, stale: true }), true);
+  assert.equal(goBlocked({ ...ok, busy: true }), true);
 });

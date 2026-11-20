@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createModeState } from '../../app/static/js/mode.js';
+import { createModeState, createModeToggle } from '../../app/static/js/mode.js';
 
 test('đổi mode thành công thì lưu rồi mới đổi', async () => {
   const saved = [];
@@ -38,4 +38,73 @@ test('chọn lại mode đang dùng thì không gọi server', async () => {
   const s = createModeState('dev', async () => { calls += 1; });
   assert.equal(await s.set('dev'), true);
   assert.equal(calls, 0);
+});
+
+test('lưu mode thất bại thì ghi nhận lỗi cho tới lần đổi sau', async () => {
+  let fail = true;
+  const s = createModeState('production', async () => { if (fail) throw new Error('mất kết nối'); });
+  assert.equal(s.failed(), false);
+  await s.set('dev');
+  assert.equal(s.failed(), true);
+  fail = false;
+  await s.set('dev');
+  assert.equal(s.failed(), false);
+  assert.equal(s.get(), 'dev');
+});
+
+// Vừa đủ DOM cho createModeToggle.
+function fakeElement() {
+  return {
+    dataset: {},
+    children: [],
+    attrs: {},
+    listeners: {},
+    append(child) { this.children.push(child); },
+    setAttribute(name, value) { this.attrs[name] = value; },
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+  };
+}
+
+test('toggle báo thay đổi cả lúc bắt đầu lưu lẫn lúc lưu xong', async (t) => {
+  globalThis.document = { createElement: fakeElement };
+  t.after(() => { delete globalThis.document; });
+  let release;
+  const state = createModeState('production', () => new Promise((r) => { release = r; }));
+  const seen = [];
+  const el = fakeElement();
+  createModeToggle(el, {
+    modes: { dev: 'private', production: 'public' },
+    state,
+    onChange: () => seen.push([state.get(), state.busy()]),
+  });
+  const [dev, production] = el.children;
+  assert.equal(dev.textContent, 'Dev · private');
+  assert.equal(production.attrs['aria-pressed'], 'true');
+
+  const clicked = dev.listeners.click();
+  // Đang lưu: vẫn là mode cũ, nơi dùng mode phải biết để chờ.
+  assert.deepEqual(seen, [['production', true]]);
+  assert.equal(dev.disabled, true);
+  release();
+  await clicked;
+  assert.deepEqual(seen, [['production', true], ['dev', false]]);
+  assert.equal(el.dataset.mode, 'dev');
+  assert.equal(dev.attrs['aria-pressed'], 'true');
+  assert.equal(dev.disabled, false);
+});
+
+test('toggle đổi mode thất bại thì vẫn ở mode cũ và báo thay đổi để hiện lỗi', async (t) => {
+  globalThis.document = { createElement: fakeElement };
+  t.after(() => { delete globalThis.document; });
+  const state = createModeState('production', async () => { throw new Error('mất kết nối'); });
+  const seen = [];
+  const el = fakeElement();
+  createModeToggle(el, {
+    modes: { dev: 'private', production: 'public' },
+    state,
+    onChange: () => seen.push([state.get(), state.busy(), state.failed()]),
+  });
+  await el.children[0].listeners.click();
+  assert.deepEqual(seen.at(-1), ['production', false, true]);
+  assert.equal(el.dataset.mode, 'production');
 });

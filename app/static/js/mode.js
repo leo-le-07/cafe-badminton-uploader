@@ -8,12 +8,16 @@
 export function createModeState(initial, save) {
   let mode = initial;
   let saving = false;
+  let failed = false;
   return {
     get: () => mode,
     busy: () => saving,
+    // True after a change the server did not take, until the next attempt.
+    failed: () => failed,
     // Resolves true once `next` is the current mode, false if it is not.
     async set(next) {
       if (saving) return false;
+      failed = false;
       if (next === mode) return true;
       saving = true;
       try {
@@ -21,6 +25,7 @@ export function createModeState(initial, save) {
         mode = next;
         return true;
       } catch {
+        failed = true;
         return false;
       } finally {
         saving = false;
@@ -31,7 +36,9 @@ export function createModeState(initial, save) {
 
 const LABELS = { dev: 'Dev', production: 'Production' };
 
-// Draws one button per mode into `el`. `onChange()` runs after each change.
+// Draws one button per mode into `el`. `onChange()` runs when a change starts
+// (state.busy() is true and the old mode still stands) and again when it ends,
+// whether it worked or not, so whatever uses the mode can wait and show a failure.
 export function createModeToggle(el, { modes, state, onChange }) {
   const buttons = new Map();
   for (const [mode, privacy] of Object.entries(modes)) {
@@ -52,13 +59,13 @@ export function createModeToggle(el, { modes, state, onChange }) {
   }
 
   async function choose(mode) {
-    const before = state.get();
+    if (state.busy()) return;
     const pending = state.set(mode);
     render();
-    const ok = await pending;
-    el.title = ok ? '' : 'Chưa đổi được chế độ, hãy thử lại';
+    onChange();
+    await pending;
     render();
-    if (state.get() !== before) onChange();
+    onChange();
   }
 
   render();

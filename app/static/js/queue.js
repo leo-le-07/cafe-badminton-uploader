@@ -41,8 +41,13 @@ function statusText(job) {
 // One failed poll can be a blip; two in a row are shown.
 export const connectionLost = (failedPolls) => failedPolls >= 2;
 
-// Buttons of a queue row. "Đưa về chỉnh sửa" only before the video is on
-// YouTube (the server refuses it after that, and while an upload is live).
+// Whether the upload button must refuse a press. While the mode is being
+// saved, or after a change that failed, the privacy on the button may not be
+// the one the user just asked for, so nothing is queued until that is settled.
+export function goBlocked({ busy, n, signedIn, stale, modeBusy, modeFailed }) {
+  return busy || n === 0 || !signedIn || stale || modeBusy || modeFailed;
+}
+
 export const goLabel = (n, privacy) => `Xử lý & upload ${n} trận · ${privacy}`;
 
 // The privacy a job uploads with; jobs without a known mode are private,
@@ -51,6 +56,8 @@ export function jobPrivacy(job, modes) {
   return Object.hasOwn(modes, job.mode) ? modes[job.mode] : 'private';
 }
 
+// Buttons of a queue row. "Đưa về chỉnh sửa" only before the video is on
+// YouTube (the server refuses it after that, and while an upload is live).
 export function rowActions(job) {
   const actions = [];
   if (job.status === 'error' || job.status === 'waiting_quota') actions.push('retry');
@@ -63,7 +70,8 @@ const ACTION_LABELS = { retry: 'Thử lại', unqueue: 'Đưa về chỉnh sửa
 const safeLink = (url) => (typeof url === 'string' && /^https:\/\//.test(url) ? url : null);
 
 // `els`: {go, note, panel}. `deps`: {getState, getLocked, getOpenMatchId,
-// isStale, isSignedIn, saveNow, onLocked(ids), onDone(), onSignedOut()}.
+// isStale, isSignedIn, getMode, modes, isModeBusy, isModeFailed, saveNow,
+// onLocked(ids), onDone(), onSignedOut()}. `modes` maps mode -> privacy.
 export function createQueue(els, deps, initialJobs) {
   const { go, note, panel } = els;
   let jobs = [];
@@ -261,7 +269,9 @@ export function createQueue(els, deps, initialJobs) {
       else if (n !== goError.n) goError = null;
     }
     go.textContent = busy ? 'Đang đưa vào hàng đợi…' : goLabel(n, deps.modes[deps.getMode()]);
-    go.disabled = busy || n === 0 || !signedIn || stale;
+    const modeBusy = deps.isModeBusy();
+    const modeFailed = deps.isModeFailed();
+    go.disabled = goBlocked({ busy, n, signedIn, stale, modeBusy, modeFailed });
     let text = '';
     let detail = '';
     if (stale) {
@@ -269,16 +279,19 @@ export function createQueue(els, deps, initialJobs) {
     } else if (goError) {
       text = goError.text;
       detail = goError.detail;
+    } else if (modeFailed) {
+      text = 'Chưa đổi được chế độ upload: hãy bấm lại Dev hoặc Production';
     } else if (!signedIn) {
       text = 'Cần đăng nhập YouTube';
     }
     if (note.textContent !== text) note.textContent = text;
     note.title = detail;
-    note.classList.toggle('err', !!goError || stale);
+    note.classList.toggle('err', !!goError || stale || modeFailed);
   }
 
   async function enqueue() {
     if (busy || !deps.isSignedIn() || deps.isStale()) return;
+    if (deps.isModeBusy() || deps.isModeFailed()) return;
     const ids = eligibleIds();
     if (ids.length === 0) return;
     // The mode on the button when it was pressed, even if the switch moves

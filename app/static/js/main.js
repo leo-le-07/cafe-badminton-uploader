@@ -490,6 +490,8 @@ async function start() {
       isStale: () => !!staleError,
       isSignedIn: () => auth.get().ok,
       getMode: () => modeState.get(),
+      isModeBusy: () => modeState.busy(),
+      isModeFailed: () => modeState.failed(),
       modes: boot.modes,
       saveNow,
       onLocked: setLocked,
