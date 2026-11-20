@@ -1,63 +1,12 @@
 import pytest
-from pathlib import Path
-from unittest.mock import patch
 
 from video_prep import (
     create_title,
     _format_team_names,
-    parse_filename,
     _create_tag,
     create_description,
-    create_metadata,
+    create_metadata_from_fields,
 )
-
-
-@pytest.mark.parametrize(
-    "filename, expected",
-    [
-        (
-            "ms_LeovsKhanh",
-            ("Cafe Game", "Men's Singles", ["Leo"], ["Khanh"]),
-        ),
-        (
-            "ws_AnhvsMai",
-            ("Cafe Game", "Women's Singles", ["Anh"], ["Mai"]),
-        ),
-        (
-            "md_DenzTuvsHuyzHa",
-            ("Cafe Game", "Men's Doubles", ["Den", "Tu"], ["Huy", "Ha"]),
-        ),
-        (
-            "wd_AnhzMaivsLinhzHoa",
-            ("Cafe Game", "Women's Doubles", ["Anh", "Mai"], ["Linh", "Hoa"]),
-        ),
-        (
-            "xd_DenzAnhvsHuyzMai_Sunbad Tour Game",
-            ("Sunbad Tour Game", "Mixed Doubles", ["Den", "Anh"], ["Huy", "Mai"]),
-        ),
-        (
-            "ms_LeovsKhanh_Summer Cup 2024",
-            ("Summer Cup 2024", "Men's Singles", ["Leo"], ["Khanh"]),
-        ),
-    ],
-)
-def test_parse_filename_valid(filename, expected):
-    result = parse_filename(filename)
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    "filename, error_match",
-    [
-        ("LeovsKhanh", "Invalid filename format"),
-        ("invalid_LeovsKhanh", "Invalid match type"),
-        ("ms_LeoKhanh", "Invalid teams format"),
-        ("ms_Leo_vs_Khanh_vs_Extra", "Invalid teams format"),
-    ],
-)
-def test_parse_filename_invalid(filename, error_match):
-    with pytest.raises(ValueError, match=error_match):
-        parse_filename(filename)
 
 
 @pytest.mark.parametrize(
@@ -144,32 +93,25 @@ def test_create_description(tournament, match_type, team1, team2, match_date_str
     assert "vs" in result
 
 
-
-@patch("video_prep.datetime")
-def test_create_metadata(mock_datetime):
-    mock_datetime.now.return_value.strftime.return_value = "2024-12-15"
-    video_path = Path("ms_LeovsKhanh_Summer Cup.mov")
-
-    result = create_metadata(video_path)
-
-    assert result.match_type == "Men's Singles"
-    assert result.team1_names == ["Leo"]
-    assert result.team2_names == ["Khanh"]
-    assert result.tournament == "Summer Cup"
-    assert "Leo vs Khanh" in result.title
-    assert "Summer Cup" in result.title
-    assert "#sunbadminton" in result.description
+def test_metadata_from_fields_matches_existing_format():
+    m = create_metadata_from_fields(
+        "md", ["Nam", "Hùng"], ["Tú", "Long"], "Cafe Game", "2026-11-20"
+    )
+    assert m.title == "Nam/Hùng vs Tú/Long | Cafe Game (2026-11-20)"
+    assert m.match_type == "Men's Doubles"
+    assert m.team1_names == ["Nam", "Hùng"]
+    assert m.team2_names == ["Tú", "Long"]
+    assert m.tournament == "Cafe Game"
+    assert "#mensdoubles" in m.description and "#cafegame" in m.description
+    assert m.category == "17"
 
 
-@patch("video_prep.datetime")
-def test_create_metadata_doubles(mock_datetime):
-    mock_datetime.now.return_value.strftime.return_value = "2024-12-15"
-    video_path = Path("md_DenzTuvsHuyzHa.mov")
+def test_metadata_keeps_tournament_as_typed():
+    m = create_metadata_from_fields("ms", ["Leo"], ["Khanh"], "giải CLB mùa đông", "2026-11-20")
+    assert m.tournament == "giải CLB mùa đông"
+    assert m.title == "Leo vs Khanh | giải CLB mùa đông (2026-11-20)"
 
-    result = create_metadata(video_path)
 
-    assert result.match_type == "Men's Doubles"
-    assert result.team1_names == ["Den", "Tu"]
-    assert result.team2_names == ["Huy", "Ha"]
-    assert result.tournament == "Cafe Game"
-    assert "Den/Tu vs Huy/Ha" in result.title
+def test_metadata_rejects_unknown_match_type():
+    with pytest.raises(ValueError):
+        create_metadata_from_fields("zz", ["A"], ["B"], "X", "2026-01-01")

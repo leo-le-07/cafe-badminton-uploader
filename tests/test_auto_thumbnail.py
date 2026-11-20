@@ -1,15 +1,14 @@
-import json
-import subprocess
 import cv2
 import numpy as np
 import pytest
 from unittest.mock import patch, MagicMock
 
+from app.models import Segment
 from video_prep import (
     score_frame,
-    _get_video_duration_seconds,
     _extract_frame_at,
-    auto_select_thumbnail,
+    sample_timestamps,
+    select_thumbnail_from_segments,
 )
 
 
@@ -69,29 +68,6 @@ def test_score_frame_no_motion_identical_frames():
     assert scores["motion"] == 0.0
 
 
-# --- _get_video_duration_seconds tests ---
-
-@patch("video_prep.subprocess.run")
-def test_get_video_duration_seconds_returns_float(mock_run):
-    payload = json.dumps({"format": {"duration": "923.456"}}).encode()
-    mock_run.return_value = MagicMock(stdout=payload, returncode=0)
-
-    result = _get_video_duration_seconds("video.mov")
-
-    assert result == pytest.approx(923.456)
-    args = mock_run.call_args[0][0]
-    assert "ffprobe" in args
-    assert "video.mov" in args
-
-
-@patch("video_prep.subprocess.run")
-def test_get_video_duration_seconds_raises_on_failure(mock_run):
-    mock_run.side_effect = subprocess.CalledProcessError(1, "ffprobe")
-
-    with pytest.raises(subprocess.CalledProcessError):
-        _get_video_duration_seconds("video.mov")
-
-
 # --- _extract_frame_at tests ---
 
 @patch("video_prep.subprocess.run")
@@ -131,75 +107,72 @@ def test_extract_frame_at_uses_fast_seeking(mock_run):
     assert ss_index < i_index, "-ss must appear before -i for fast input seeking"
 
 
-# --- auto_select_thumbnail tests ---
+# --- sample_timestamps tests ---
+
+def test_sample_timestamps_stay_inside_kept_segments():
+    segs = [Segment("a.mov", 10, 20), Segment("b.mov", 0, 30)]
+    pts = sample_timestamps(segs, 8)
+    assert len(pts) == 8
+    for src, t in pts:
+        assert (src == "a.mov" and 10 <= t <= 20) or (src == "b.mov" and 0 <= t <= 30)
+    assert pts == sorted(pts, key=lambda p: (p[0] != "a.mov", p[1]))
+
+
+def test_sample_timestamps_skip_first_and_last_ten_percent():
+    # 40s kept in total: points span offsets 4..36 of the match
+    segs = [Segment("a.mov", 10, 20), Segment("b.mov", 0, 30)]
+    pts = sample_timestamps(segs, 3)
+    assert pts == [
+        ("a.mov", pytest.approx(14.0)),
+        ("b.mov", pytest.approx(10.0)),
+        ("b.mov", pytest.approx(26.0)),
+    ]
+
+
+def test_sample_timestamps_empty_segments():
+    assert sample_timestamps([], 5) == []
+
+
+# --- select_thumbnail_from_segments tests ---
+
+SEGMENTS = [Segment("a.mov", 10, 20), Segment("b.mov", 0, 30)]
+
+
+def test_select_thumbnail_from_segments_skips_if_output_exists(tmp_path):
+    output = tmp_path / "selected.jpg"
+    output.write_bytes(b"existing")
+
+    with patch("video_prep._extract_frame_at") as mock_extract:
+        select_thumbnail_from_segments(SEGMENTS, tmp_path, output)
+        mock_extract.assert_not_called()
+
+    assert output.read_bytes() == b"existing"
+
 
 @patch("video_prep._extract_frame_at")
-@patch("video_prep._get_video_duration_seconds")
-def test_auto_select_thumbnail_saves_to_correct_path(mock_duration, mock_extract, tmp_path):
-    mock_duration.return_value = 100.0
-    mock_extract.return_value = make_checkerboard()
-
-    video_path = tmp_path / "ms_LeovsKhanh.mov"
-    video_path.touch()
-    expected_output = tmp_path / "selected.jpg"
-
-    with patch("video_prep.utils.get_selected_candidate_path", return_value=expected_output):
-        auto_select_thumbnail(str(video_path))
-
-    assert expected_output.exists()
-
-
-@patch("video_prep._extract_frame_at")
-@patch("video_prep._get_video_duration_seconds")
-def test_auto_select_thumbnail_picks_sharpest_frame(mock_duration, mock_extract, tmp_path):
-    mock_duration.return_value = 100.0
+def test_select_thumbnail_from_segments_picks_sharpest(mock_extract, tmp_path):
     sharp_frame = make_checkerboard()
     dark_frame = make_frame(5)
     mock_extract.side_effect = [dark_frame, sharp_frame]
+    output = tmp_path / "work" / "selected.jpg"
 
-    video_path = tmp_path / "ms_LeovsKhanh.mov"
-    video_path.touch()
+    with patch("video_prep.config.CANDIDATE_THUMBNAIL_NUM", 2):
+        select_thumbnail_from_segments(SEGMENTS, tmp_path, output)
 
-    saved_frames = []
-
-    def fake_imwrite(path, frame):
-        saved_frames.append(frame.copy())
-        return True
-
-    with patch("video_prep.utils.get_selected_candidate_path", return_value=tmp_path / "selected.jpg"):
-        with patch("video_prep.cv2.imwrite", side_effect=fake_imwrite):
-            with patch("video_prep.config.CANDIDATE_THUMBNAIL_NUM", 2):
-                auto_select_thumbnail(str(video_path))
-
-    assert len(saved_frames) == 1
-    assert np.mean(saved_frames[0]) > 50
-
-
-def test_auto_select_thumbnail_skips_if_selected_jpg_exists(tmp_path):
-    selected = tmp_path / "selected.jpg"
-    selected.write_bytes(b"existing")
-
-    video_path = tmp_path / "ms_LeovsKhanh.mov"
-    video_path.touch()
-
-    with patch("video_prep.utils.get_selected_candidate_path", return_value=selected):
-        with patch("video_prep._get_video_duration_seconds") as mock_duration:
-            auto_select_thumbnail(str(video_path))
-            mock_duration.assert_not_called()
-
-    assert selected.read_bytes() == b"existing"
+    assert output.exists()
+    saved = cv2.imread(str(output))
+    assert np.mean(saved) > 50
+    called_paths = [c.args[0] for c in mock_extract.call_args_list]
+    assert called_paths == [str(tmp_path / "a.mov"), str(tmp_path / "b.mov")]
 
 
 @patch("video_prep._extract_frame_at")
-@patch("video_prep._get_video_duration_seconds")
-def test_auto_select_thumbnail_raises_if_no_frames(mock_duration, mock_extract, tmp_path):
-    mock_duration.return_value = 100.0
+def test_select_thumbnail_from_segments_raises_if_no_frames(mock_extract, tmp_path):
     mock_extract.return_value = None
+    output = tmp_path / "selected.jpg"
 
-    video_path = tmp_path / "ms_LeovsKhanh.mov"
-    video_path.touch()
+    with patch("video_prep.config.CANDIDATE_THUMBNAIL_NUM", 3):
+        with pytest.raises(ValueError, match="Could not extract"):
+            select_thumbnail_from_segments(SEGMENTS, tmp_path, output)
 
-    with patch("video_prep.utils.get_selected_candidate_path", return_value=tmp_path / "selected.jpg"):
-        with patch("video_prep.config.CANDIDATE_THUMBNAIL_NUM", 3):
-            with pytest.raises(ValueError, match="Could not extract"):
-                auto_select_thumbnail(str(video_path))
+    assert not output.exists()

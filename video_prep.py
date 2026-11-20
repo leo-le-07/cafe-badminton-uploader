@@ -1,8 +1,8 @@
-from custom_exceptions import CreateMetadataError
 from schemas import MatchMetadata
 from pathlib import Path
-from datetime import datetime
 from dataclasses import asdict
+
+from app.models import Segment
 
 import config
 import json
@@ -24,28 +24,6 @@ MATCH_TYPES = {
 }
 
 FIXED_TAGS = "#sunbadminton #badminton #cafebadminton"
-
-
-def parse_filename(video_stem: str) -> tuple[str, str, list[str], list[str]]:
-    parts = video_stem.split("_")
-
-    if len(parts) < 2:
-        raise ValueError(f"Invalid filename format: {video_stem}")
-
-    match_type_acronym = parts[0].lower()
-    if match_type_acronym not in MATCH_TYPES:
-        raise ValueError(f"Invalid match type acronym: {match_type_acronym}")
-    match_type = MATCH_TYPES[match_type_acronym]
-
-    teams = parts[1].split("vs")
-    if len(teams) != 2:
-        raise ValueError(f"Invalid teams format: {parts[1]}")
-    team1 = teams[0].split("z")
-    team2 = teams[1].split("z")
-
-    tournament = (parts[2] if len(parts) > 2 else "cafe game").title()
-
-    return tournament, match_type, team1, team2
 
 
 def _format_team_names(team1: list[str], team2: list[str], separator: str = "/") -> str:
@@ -108,16 +86,24 @@ def create_description(
     return description
 
 
-def create_metadata(video_path: Path) -> MatchMetadata:
-    video_stem = video_path.stem
-    current_date = datetime.now().strftime("%Y-%m-%d")
+def create_metadata_from_fields(
+    match_type: str,
+    team1: list[str],
+    team2: list[str],
+    tournament: str,
+    match_date: str,
+) -> MatchMetadata:
+    if match_type not in MATCH_TYPES:
+        raise ValueError(f"Invalid match type: {match_type}")
+    match_type_name = MATCH_TYPES[match_type]
 
-    tournament, match_type, team1, team2 = parse_filename(video_stem)
-    title = create_title(tournament, team1, team2, current_date)
-    description = create_description(tournament, match_type, team1, team2, current_date)
+    title = create_title(tournament, team1, team2, match_date)
+    description = create_description(
+        tournament, match_type_name, team1, team2, match_date
+    )
 
-    metadata = MatchMetadata(
-        match_type=match_type,
+    return MatchMetadata(
+        match_type=match_type_name,
         team1_names=team1,
         team2_names=team2,
         tournament=tournament,
@@ -126,31 +112,12 @@ def create_metadata(video_path: Path) -> MatchMetadata:
         category=constants.CATEGORY_SPORTS,
     )
 
-    return metadata
-
 
 def store(video_path, metadata: MatchMetadata) -> None:
     metadata_path = utils.get_metadata_path(video_path)
 
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(asdict(metadata), f, ensure_ascii=False, indent=4)
-
-
-def create_workspace(video_path: Path) -> None:
-    workspace_dir = utils.get_workspace_dir(video_path)
-    workspace_dir.mkdir(parents=True, exist_ok=True)
-
-
-def create_and_store_metadata(video_path: str) -> MatchMetadata:
-    path = Path(video_path)
-    create_workspace(path)
-    try:
-        metadata = create_metadata(path)
-        store(path, metadata)
-
-        return metadata
-    except ValueError as e:
-        raise CreateMetadataError(e)
 
 
 def score_frame(frame: np.ndarray, prev_frame: np.ndarray | None = None) -> dict:
@@ -168,22 +135,6 @@ def score_frame(frame: np.ndarray, prev_frame: np.ndarray | None = None) -> dict
         motion = 0.0
 
     return {"sharpness": sharpness, "brightness": brightness, "motion": motion}
-
-
-def _get_video_duration_seconds(video_path: str) -> float:
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_format",
-            video_path,
-        ],
-        capture_output=True,
-        check=True,
-    )
-    info = json.loads(result.stdout)
-    return float(info["format"]["duration"])
 
 
 def _extract_frame_at(video_path: str, timestamp: float) -> np.ndarray | None:
@@ -207,36 +158,47 @@ def _extract_frame_at(video_path: str, timestamp: float) -> np.ndarray | None:
     return cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
 
-def auto_select_thumbnail(video_path: str) -> None:
-    path = Path(video_path)
+def sample_timestamps(segments: list[Segment], count: int) -> list[tuple[str, float]]:
+    """Spread `count` points evenly over the kept footage of a match, skipping
+    its first and last 10%, and map each back to (source, time in source)."""
+    total = sum(seg.end - seg.start for seg in segments)
+    if count <= 0 or total <= 0:
+        return []
 
-    output_path = utils.get_selected_candidate_path(path)
+    points = []
+    for offset in np.linspace(total * 0.1, total * 0.9, count):
+        elapsed = 0.0
+        for seg in segments:
+            length = seg.end - seg.start
+            if offset <= elapsed + length or seg is segments[-1]:
+                points.append((seg.source, float(seg.start + min(offset - elapsed, length))))
+                break
+            elapsed += length
+    return points
+
+
+def select_thumbnail_from_segments(
+    segments: list[Segment], source_dir: Path, output_path: Path
+) -> None:
     if output_path.exists():
         logger.info(f"Thumbnail already selected, skipping: {output_path}")
         return
-
-    num_candidates = config.CANDIDATE_THUMBNAIL_NUM
-
-    duration = _get_video_duration_seconds(video_path)
-    start = duration * 0.1
-    end = duration * 0.9
-    timestamps = np.linspace(start, end, num_candidates)
 
     frames = []
     raw_scores = []
     prev_frame = None
 
-    for timestamp in timestamps:
-        frame = _extract_frame_at(video_path, timestamp)
+    for source, timestamp in sample_timestamps(segments, config.CANDIDATE_THUMBNAIL_NUM):
+        frame = _extract_frame_at(str(source_dir / source), timestamp)
         if frame is None:
-            logger.warning(f"Could not extract frame at {timestamp:.2f}s from {path}")
+            logger.warning(f"Could not extract frame at {timestamp:.2f}s from {source}")
             continue
         raw_scores.append(score_frame(frame, prev_frame))
         frames.append(frame)
         prev_frame = frame
 
     if not frames:
-        raise ValueError(f"Could not extract any frames from {path}")
+        raise ValueError(f"Could not extract any frames from {len(segments)} segment(s)")
 
     sharpness_values = [s["sharpness"] for s in raw_scores]
     motion_values = [s["motion"] for s in raw_scores]
