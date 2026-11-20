@@ -4,7 +4,8 @@
 // and has no problem. The panel polls GET /api/jobs: every second while a job
 // is queued or running, every 10 s otherwise. Each poll reports the locked
 // match ids (every match with a job, plus those being queued right now) so
-// the timeline, the shortcuts and the cards follow the queue.
+// the timeline, the shortcuts and the cards follow the queue. After two
+// failed polls in a row the panel says the app cannot be reached.
 
 import * as api from './api.js';
 import { matchProblems } from './model.js';
@@ -38,6 +39,20 @@ function statusText(job) {
   return WITH_PERCENT.has(job.step) ? `${label} ${percentOf(job)}%` : label;
 }
 
+// One failed poll can be a blip; two in a row are shown.
+export const connectionLost = (failedPolls) => failedPolls >= 2;
+
+// Buttons of a queue row. "Đưa về chỉnh sửa" only before the video is on
+// YouTube (the server refuses it after that, and while an upload is live).
+export function rowActions(job) {
+  const actions = [];
+  if (job.status === 'error' || job.status === 'waiting_quota') actions.push('retry');
+  if (['queued', 'error', 'waiting_quota'].includes(job.status) && !job.youtube_link) actions.push('unqueue');
+  return actions;
+}
+
+const ACTION_LABELS = { retry: 'Thử lại', unqueue: 'Đưa về chỉnh sửa' };
+
 const safeLink = (url) => (typeof url === 'string' && /^https:\/\//.test(url) ? url : null);
 
 // `els`: {go, note, panel}. `deps`: {getState, getLocked, getOpenMatchId,
@@ -56,10 +71,18 @@ export function createQueue(els, deps, initialJobs) {
   let seq = 0;
   let applied = 0;
   let lockKey = null;
+  let failedPolls = 0;
 
-  panel.innerHTML = '<h4>Hàng đợi</h4><div class="jobs"></div><p class="hint empty">Chưa có trận nào trong hàng đợi.</p>';
+  panel.innerHTML = '<h4>Hàng đợi</h4><p class="offline" role="status" hidden>Mất kết nối với ứng dụng — đang thử lại…</p><div class="jobs"></div><p class="hint empty">Chưa có trận nào trong hàng đợi.</p>';
   const list = panel.querySelector('.jobs');
   const empty = panel.querySelector('.empty');
+  const offline = panel.querySelector('.offline');
+
+  function renderConnection() {
+    const lost = connectionLost(failedPolls);
+    offline.hidden = !lost;
+    panel.classList.toggle('lost', lost);
+  }
 
   // ---------------------------------------------------------------- locks
 
@@ -93,13 +116,16 @@ export function createQueue(els, deps, initialJobs) {
     const n = ++seq;
     try {
       const next = await api.listJobs();
+      failedPolls = 0;
       if (n > applied) {
         applied = n;
         applyJobs(next);
       }
     } catch {
       // Keep the last list; the next poll tries again.
+      failedPolls += 1;
     }
+    renderConnection();
   }
 
   function schedule() {
@@ -138,15 +164,13 @@ export function createQueue(els, deps, initialJobs) {
     }
     let html = `<div class="nm"><em class="t" title="${title}">${title}</em><span>${span}</span></div>`;
     if (job.status !== 'done') html += `<div class="bar"><div style="width:${percentOf(job)}%"></div></div>`;
-    if (job.status === 'error' && job.error) html += `<div class="msg">${esc(job.error)}</div>`;
-    const buttons = [];
+    if (job.status === 'error' && job.error) {
+      html += `<div class="msg" title="${esc(job.error)}">${esc(job.error)}</div>`;
+    }
     const dis = acting.has(id) ? ' disabled' : '';
-    if (job.status === 'error' || job.status === 'waiting_quota') {
-      buttons.push(`<button type="button" data-act="retry"${dis}>Thử lại</button>`);
-    }
-    if (job.status === 'error' || job.status === 'queued') {
-      buttons.push(`<button type="button" data-act="unqueue"${dis}>Đưa về chỉnh sửa</button>`);
-    }
+    const buttons = rowActions(job).map(
+      (act) => `<button type="button" data-act="${act}"${dis}>${ACTION_LABELS[act]}</button>`,
+    );
     if (buttons.length) html += `<div class="acts">${buttons.join('')}</div>`;
     if (rowErrors.has(id)) html += `<div class="msg">${esc(rowErrors.get(id))}</div>`;
     return { cls: cls.join(' '), html };

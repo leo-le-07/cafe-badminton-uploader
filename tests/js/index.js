@@ -2,3 +2,4 @@
 import './model.test.js';
 import './names.test.js';
 import './save.test.js';
+import './queue.test.js';

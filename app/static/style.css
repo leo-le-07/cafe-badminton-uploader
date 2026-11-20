@@ -164,7 +164,10 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 .job.error .nm span { color: var(--danger); }
 .job.error .bar div { background: var(--danger); }
 .job.wait .nm span { color: var(--accent); }
-.job .msg { color: var(--m3); margin-top: 4px; word-break: break-word; }
+.job .msg { color: var(--m3); margin-top: 4px; word-break: break-word; white-space: pre-wrap; max-height: 5.8em; overflow: auto; }
+.queue .offline { margin: 0 0 8px; color: var(--m3); font-size: 12px; }
+.queue .offline[hidden] { display: none; }
+.queue.lost .jobs { opacity: .45; filter: grayscale(1); }
 .job .acts { display: flex; gap: 6px; margin-top: 4px; }
 .job .acts button { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
 .job .acts button:disabled { color: var(--muted); cursor: default; }
