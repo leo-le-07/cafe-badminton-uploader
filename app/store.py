@@ -6,8 +6,8 @@ place with os.replace, so a crash never leaves a half-written file behind.
 
 import json
 import os
+import re
 import shutil
-import tempfile
 import threading
 from collections import Counter
 from datetime import datetime
@@ -17,7 +17,7 @@ from typing import Any, Callable, TypeVar
 import config
 from app.models import Job, Session
 from logger import get_logger
-from utils import METADATA_FILE
+from utils import METADATA_FILE, UPLOADED_FILE, write_json_atomic
 
 logger = get_logger(__name__)
 
@@ -32,19 +32,7 @@ T = TypeVar("T")
 
 
 def _write_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_name, path)
-    except BaseException:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
+    write_json_atomic(path, data)
 
 
 def _read_json(path: Path):
@@ -118,6 +106,45 @@ def list_archived_jobs() -> list[Job]:
         if job.status == "done":
             jobs.append(job)
     return sorted(jobs, key=lambda job: job.queued_at)
+
+
+_ARCHIVE_NAME = re.compile(r"\d{4}-\d{2}-\d{2}_(?P<id>[a-z0-9-]+)")
+_COLLISION_SUFFIX = re.compile(r"-\d+$")
+
+
+def archived_upload_ids() -> set[str]:
+    """Match ids of archives in COMPLETED_DIR whose upload.json holds a video id.
+
+    The id comes from the archive's job.json when it is readable, otherwise
+    from the folder name `<recorded_date>_<match_id>`. cleanup adds `-<n>` to
+    the name on a collision, and a match id can itself end in `-<digits>`, so
+    both readings of such a name are returned; an id that matches no match
+    is harmless. Read-only: nothing in COMPLETED_DIR is changed.
+    """
+    root = config.COMPLETED_DIR
+    if not root.exists():
+        return set()
+    ids: set[str] = set()
+    for folder in root.iterdir():
+        record = folder / UPLOADED_FILE
+        if not record.is_file():
+            continue
+        try:
+            data = _read_json(record)
+            if not (isinstance(data, dict) and data.get("video_id")):
+                continue
+        except (OSError, ValueError):
+            continue
+        try:
+            ids.add(Job.from_dict(_read_json(folder / JOB_FILE)).match.id)
+            continue
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            pass
+        named = _ARCHIVE_NAME.fullmatch(folder.name)
+        if named:
+            ids.add(named["id"])
+            ids.add(_COLLISION_SUFFIX.sub("", named["id"]))
+    return ids
 
 
 def delete_workspace(match_id: str) -> None:

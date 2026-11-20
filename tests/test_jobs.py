@@ -673,3 +673,168 @@ def test_base_exception_in_step_does_not_leave_job_executing(fake, clock):
 
     assert queue.run_once() is True
     assert fake.calls == [("m1", "metadata"), ("m1", "metadata")]
+
+
+# ---- upload safety (unqueue with a live session, corrupt records, archives) ---
+
+
+def _live_upload_session(id):
+    (store.workspace_dir(id) / uploader.UPLOAD_SESSION_FILE).write_text(
+        json.dumps({"resumable_uri": "https://up/1", "file_size": 10}),
+        encoding="utf-8",
+    )
+
+
+def test_unqueue_refused_while_a_resumable_upload_session_exists(fake, clock):
+    # The last chunk may have reached YouTube with the response lost: only
+    # resuming the session can tell, so the workspace must not be deleted.
+    fake.fail[("m1", "upload")] = ConnectionError("response lost")
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")])
+    _drain(queue)
+    _live_upload_session("m1")
+    assert _status(queue, "m1")["status"] == "error"
+
+    with pytest.raises(ValueError, match="Thử lại"):
+        queue.unqueue("m1")
+
+    assert (store.workspace_dir("m1") / uploader.UPLOAD_SESSION_FILE).exists()
+    assert queue.locked_match_ids() == {"m1"}
+
+
+def test_unqueue_allowed_for_waiting_quota_job_without_upload(fake, clock):
+    fake.fail[("m1", "upload")] = QuotaExceededError("quota")
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")])
+    _drain(queue)
+    assert _status(queue, "m1")["status"] == "waiting_quota"
+
+    assert queue.unqueue("m1").id == "m1"
+    assert not store.workspace_dir("m1").exists()
+    assert queue.locked_match_ids() == set()
+
+
+def test_unqueue_refused_for_waiting_quota_job_with_live_session(fake, clock):
+    fake.fail[("m1", "upload")] = QuotaExceededError("quota")
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")])
+    _drain(queue)
+    _live_upload_session("m1")
+
+    with pytest.raises(ValueError, match="Thử lại"):
+        queue.unqueue("m1")
+    assert store.workspace_dir("m1").exists()
+
+
+def test_corrupt_upload_record_makes_the_job_an_error_without_uploading(fake, clock):
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1")])
+    for _ in range(4):  # metadata .. encode
+        queue.run_once()
+    assert _status(queue, "m1")["step"] == "upload"
+    (store.workspace_dir("m1") / utils.UPLOADED_FILE).write_text('{"video_id": "vi')
+
+    assert queue.run_once() is True
+    assert queue.run_once() is False  # no endless loop
+
+    job = _status(queue, "m1")
+    assert job["status"] == "error"
+    assert "upload.json" in job["error"] and "hỏng" in job["error"]
+    assert ("m1", "upload") not in fake.calls
+    with pytest.raises(ValueError, match="upload.json"):
+        queue.unqueue("m1")
+    assert store.workspace_dir("m1").exists()
+
+
+def test_quota_while_setting_thumbnail_waits_for_quota(fake, clock):
+    fake.fail[("m1", "set_thumbnail")] = QuotaExceededError("quota")
+    queue = JobQueue(clock=clock)
+    queue.enqueue([_match("m1"), _match("m2")])
+
+    _drain(queue)
+
+    job1 = _status(queue, "m1")
+    assert (job1["status"], job1["step"]) == ("waiting_quota", "set_thumbnail")
+    assert job1["error"] == "Chờ quota YouTube, sẽ tự thử lại"
+    # The next job does its pre-upload steps, then waits too.
+    job2 = _status(queue, "m2")
+    assert (job2["status"], job2["step"]) == ("waiting_quota", "upload")
+    assert ("m2", "upload") not in fake.calls
+
+    del fake.fail[("m1", "set_thumbnail")]
+    fake.calls.clear()
+    clock.now += 4 * HOUR
+    _drain(queue)
+
+    assert fake.calls[0] == ("m1", "set_thumbnail")
+    assert _status(queue, "m1")["status"] == "done"
+    assert _status(queue, "m2")["status"] == "done"
+
+
+def test_job_at_set_thumbnail_waits_while_another_job_hit_the_quota(fake, clock):
+    fake.fail[("m1", "upload")] = QuotaExceededError("quota")
+    _write_job("m0", "queued", "set_thumbnail", "2026-11-20T09:00:00")
+    vp = utils.workspace_video_path(store.workspace_dir("m0"))
+    uploader.save_upload_record(vp, "vid-m0", thumbnail_set=False)
+    queue = JobQueue(clock=clock)
+    queue._quota_until["m1"] = clock.now + HOUR  # m1 hit the quota
+
+    queue.run_once()
+
+    assert _status(queue, "m0")["status"] == "waiting_quota"
+    assert fake.calls == []
+
+
+def _archive_without_job(folder_name, video_id="vid-x", job_text=None):
+    folder = config.COMPLETED_DIR / folder_name
+    folder.mkdir(parents=True)
+    (folder / utils.UPLOADED_FILE).write_text(
+        json.dumps(
+            {
+                "video_id": video_id,
+                "uploaded_at": "2026-11-20T10:00:00",
+                "thumbnail_set": True,
+                "youtube_link": f"https://youtu.be/{video_id}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    if job_text is not None:
+        (folder / store.JOB_FILE).write_text(job_text, encoding="utf-8")
+    return folder
+
+
+def test_archive_with_upload_record_but_no_job_file_stays_locked(fake, clock):
+    _archive_without_job("2026-11-19_m1")
+    _archive_without_job("2026-11-19_m2", job_text="{not json")
+    _archive_without_job("2026-11-19_m3-1")  # name collision suffix
+    _archive_without_job("2026-11-19_m4", video_id="")  # never uploaded
+    listing = sorted(p.name for p in config.COMPLETED_DIR.rglob("*"))
+
+    queue = JobQueue(clock=clock)
+
+    locked = queue.locked_match_ids()
+    assert {"m1", "m2", "m3"} <= locked
+    assert "m4" not in locked
+    for id in ("m1", "m2", "m3"):
+        with pytest.raises(ValueError):
+            queue.enqueue([_match(id)])
+    assert queue.enqueue([_match("m4")])
+    assert queue.run_once() is True  # only m4 runs
+    assert fake.calls == [("m4", "metadata")]
+    # Read-only inside COMPLETED_DIR.
+    assert sorted(p.name for p in config.COMPLETED_DIR.rglob("*")) == listing
+
+
+def test_archive_id_comes_from_readable_job_file_over_folder_name(fake, clock):
+    folder = _archive_job("real-id")
+    folder.rename(config.COMPLETED_DIR / "2026-11-19_renamed")
+    (config.COMPLETED_DIR / "2026-11-19_renamed" / utils.UPLOADED_FILE).write_text(
+        json.dumps({"video_id": "v", "uploaded_at": "x", "thumbnail_set": True,
+                    "youtube_link": "https://youtu.be/v"}),
+        encoding="utf-8",
+    )
+
+    queue = JobQueue(clock=clock)
+
+    assert "real-id" in queue.locked_match_ids()

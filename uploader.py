@@ -8,6 +8,9 @@ from dataclasses import asdict
 from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+import httplib2
+import ssl
+import time
 from auth_service import get_client
 import config
 from pathlib import Path
@@ -15,6 +18,7 @@ from typing import Any, Callable
 from datetime import datetime
 import json
 from utils import (
+    write_json_atomic,
     get_metadata,
     get_thumbnail_path,
     get_upload_record_path,
@@ -28,6 +32,14 @@ UPLOAD_SESSION_FILE = "upload_session.json"
 
 QUOTA_ERROR_REASONS = {"quotaExceeded", "rateLimitExceeded", "uploadLimitExceeded"}
 EXPIRED_SESSION_STATUSES = {404, 410}
+
+# googleapiclient retries 5xx/429 responses itself (num_retries), but a
+# connection that drops while a chunk is in flight is raised at once. The
+# request is then in its error state, so the next next_chunk() asks YouTube
+# which bytes arrived and continues from there on the same session.
+CHUNK_RETRIES = 5
+TRANSPORT_ERRORS = (ConnectionError, TimeoutError, ssl.SSLError, httplib2.HttpLib2Error)
+_sleep = time.sleep
 
 
 def is_quota_error(err: HttpError) -> bool:
@@ -59,8 +71,9 @@ def load_upload_session(session_path: Path, file_size: int) -> str | None:
 
 
 def save_upload_session(session_path: Path, resumable_uri: str, file_size: int) -> None:
-    with open(session_path, "w", encoding="utf-8") as f:
-        json.dump({"resumable_uri": resumable_uri, "file_size": file_size}, f)
+    write_json_atomic(
+        session_path, {"resumable_uri": resumable_uri, "file_size": file_size}
+    )
 
 
 def _youtube_client() -> Any:
@@ -100,9 +113,18 @@ def _send_chunks(
 ) -> dict:
     saved_uri = request.resumable_uri
     response = None
+    failures = 0
 
     while response is None:
-        status, response = request.next_chunk()
+        try:
+            status, response = request.next_chunk(num_retries=CHUNK_RETRIES)
+        except TRANSPORT_ERRORS:
+            failures += 1
+            if failures > CHUNK_RETRIES:
+                raise
+            _sleep(min(2**failures, 16))
+            continue
+        failures = 0
         if (
             response is None
             and session_path is not None
@@ -233,6 +255,10 @@ def set_thumbnail_for_video(video_path: str) -> None:
         set_thumbnail(youtube_client, upload_record.video_id, thumbnail_path)
     except RefreshError as e:
         raise AuthRequiredError(str(e)) from e
+    except HttpError as e:
+        if is_quota_error(e):
+            raise QuotaExceededError(str(e)) from e
+        raise
     save_upload_record(path, upload_record.video_id, thumbnail_set=True)
 
 
@@ -251,5 +277,4 @@ def save_upload_record(video_path: Path, video_id: str, thumbnail_set: bool) -> 
         youtube_link=f"https://youtu.be/{video_id}",
     )
 
-    with open(upload_record_path, "w", encoding="utf-8") as f:
-        json.dump(asdict(upload_record), f, ensure_ascii=False, indent=4)
+    write_json_atomic(upload_record_path, asdict(upload_record), indent=4)

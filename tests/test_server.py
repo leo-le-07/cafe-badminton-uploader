@@ -448,6 +448,25 @@ def test_unqueue_conflict_when_uploaded(client, queue, fake, source, signed_in):
     assert statuses(client) == {"m1": "error"}
 
 
+def test_unqueue_conflict_while_upload_session_is_live(
+    client, queue, fake, source, signed_in
+):
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    client.post("/api/jobs", json={"match_ids": ["m1"]})
+    fake.fail[("m1", "upload")] = ConnectionError("response lost")
+    run_until_idle(queue)
+    (store.workspace_dir("m1") / uploader.UPLOAD_SESSION_FILE).write_text(
+        '{"resumable_uri": "https://up/1", "file_size": 10}'
+    )
+
+    r = client.post("/api/jobs/m1/unqueue")
+
+    assert r.status_code == 409
+    assert "Thử lại" in r.json["errors"][0]
+    assert statuses(client) == {"m1": "error"}
+    assert store.workspace_dir("m1").exists()
+
+
 def test_unqueue_unlocks_match(client, source, signed_in):
     put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
     client.post("/api/jobs", json={"match_ids": ["m1"]})

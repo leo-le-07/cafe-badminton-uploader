@@ -16,7 +16,11 @@ import config
 import media_probe
 from app import pipeline, store
 from app.models import Job, Match, match_problems
-from custom_exceptions import AuthRequiredError, QuotaExceededError
+from custom_exceptions import (
+    AuthRequiredError,
+    CorruptUploadRecordError,
+    QuotaExceededError,
+)
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +30,13 @@ AUTH_MESSAGE = (
     "Chưa đăng nhập YouTube hoặc phiên đăng nhập đã hết hạn. "
     "Hãy đăng nhập lại rồi bấm Thử lại."
 )
+LIVE_UPLOAD_MESSAGE = (
+    "Trận {id} đang upload dở lên YouTube (còn phiên upload). Hãy bấm "
+    "\"Thử lại\" để upload nốt trước; đưa về chỉnh sửa lúc này có thể làm "
+    "video bị upload hai lần."
+)
+# Steps that call the YouTube API and so stop while any job waits for quota.
+QUOTA_STEPS = ("upload", "set_thumbnail")
 IDLE_SECONDS = 1.0
 STOP_TIMEOUT_SECONDS = 30.0
 
@@ -53,6 +64,9 @@ class JobQueue:
         # Finished jobs live in COMPLETED_DIR; they stay locked and listed so
         # a finished match can never be queued (and uploaded) again.
         archived = {job.match.id: job for job in store.list_archived_jobs()}
+        # Archives whose job.json is missing or unreadable but whose
+        # upload.json holds a video id: not listed, but still locked.
+        self._archived_ids: set[str] = store.archived_upload_ids() - set(archived)
         jobs = list(archived.values())
         for job in store.list_jobs():
             if job.match.id in archived:
@@ -92,6 +106,8 @@ class JobQueue:
             for id in ids:
                 if id in self._jobs:
                     raise ValueError(f"Trận {id} đã có trong hàng đợi")
+                if id in self._archived_ids:
+                    raise ValueError(f"Trận {id} đã upload lên YouTube")
             jobs = []
             for match, recorded_date in zip(matches, recorded_dates):
                 job = Job(
@@ -128,6 +144,8 @@ class JobQueue:
                 raise ValueError(f"Trận {match_id} đang được xử lý")
             if job.status == "done" or pipeline.uploaded_record(match_id):
                 raise ValueError(f"Trận {match_id} đã upload lên YouTube")
+            if pipeline.has_upload_session(match_id):
+                raise ValueError(LIVE_UPLOAD_MESSAGE.format(id=match_id))
             del self._jobs[match_id]
             self._quota_until.pop(match_id, None)
             store.delete_workspace(match_id)
@@ -139,7 +157,7 @@ class JobQueue:
 
     def locked_match_ids(self) -> set[str]:
         with self._lock:
-            return set(self._jobs)
+            return set(self._jobs) | self._archived_ids
 
     # ---- worker --------------------------------------------------------------
 
@@ -152,11 +170,20 @@ class JobQueue:
                 return False
             match_id, step = job.match.id, job.step
 
-            if step == "upload" and not pipeline.uploaded_record(match_id):
+            if step in QUOTA_STEPS:
+                try:
+                    calls_youtube = pipeline.needs_youtube(match_id, step)
+                except CorruptUploadRecordError as e:
+                    # Never upload over (or loop on) an unreadable record.
+                    job.status = "error"
+                    job.error = f"{step}: {e}"
+                    job.progress = 0.0
+                    store.save_job(job)
+                    return True
                 blocked_until = self._quota_blocked_until(match_id, now)
-                if blocked_until is not None:
+                if calls_youtube and blocked_until is not None:
                     # Another job hit the quota: wait with it instead of
-                    # calling the uploader.
+                    # calling YouTube.
                     self._wait_for_quota(job, blocked_until)
                     return True
 

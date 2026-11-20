@@ -38,6 +38,22 @@ def uploaded_record(match_id: str) -> UploadedRecord | None:
     return record if record and record.video_id else None
 
 
+def has_upload_session(match_id: str) -> bool:
+    """Whether a resumable upload was started and not finished: the video may
+    already be complete on YouTube with the final response lost."""
+    return uploader.get_upload_session_path(_video_path(match_id)).exists()
+
+
+def needs_youtube(match_id: str, step: str) -> bool:
+    """Whether running `step` now would call the YouTube API."""
+    record = uploaded_record(match_id)
+    if step == "upload":
+        return record is None
+    if step == "set_thumbnail":
+        return record is None or not record.thumbnail_set
+    return False
+
+
 def _names(team: list[str]) -> list[str]:
     return [name.strip() for name in team if name.strip()]
 
