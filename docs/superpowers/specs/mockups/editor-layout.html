@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Mockup editor</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel2: #232730; --line: #2f3440;
+    --text: #e6e8ec; --muted: #8b93a3; --accent: #ffd400;
+    --m1: #3fa7ff; --m2: #5ed38a; --m3: #ff8a4c; --danger: #ff5d5d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Helvetica Neue", sans-serif; }
+  .note { background: #2a2610; border-bottom: 1px solid #5a4d00; color: #ffe98a; padding: 8px 16px; font-size: 13px; }
+  .app { display: grid; grid-template-columns: 200px 1fr 380px; grid-template-rows: auto 1fr; height: calc(100vh - 37px); min-height: 720px; }
+  .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .top b { font-size: 15px; }
+  .top .spacer { flex: 1; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
+  .pill.ok { color: var(--m2); }
+  aside, main, .right { overflow: auto; }
+  aside { border-right: 1px solid var(--line); padding: 12px; background: var(--panel); }
+  .right { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+  h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .src { padding: 8px; border-radius: 6px; border: 1px solid var(--line); margin-bottom: 6px; background: var(--panel2); }
+  .src.on { border-color: var(--accent); }
+  .src small { display: block; color: var(--muted); font-size: 12px; }
+  .src .chk { float: right; color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  main { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .player { flex: 1; min-height: 300px; background: #000 linear-gradient(160deg, #10301f, #06140d); border-radius: 8px; position: relative; display: flex; align-items: center; justify-content: center; color: #3c6b52; font-size: 15px; }
+  .player .tc { position: absolute; left: 12px; bottom: 10px; font: 13px ui-monospace, Menlo, monospace; color: #fff; background: #0009; padding: 2px 8px; border-radius: 4px; }
+  .player .state { position: absolute; right: 12px; bottom: 10px; font-size: 12px; background: var(--m2); color: #04210f; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .tl-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; }
+  .tl-files { display: flex; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .tl-files span { border-left: 2px solid var(--muted); padding-left: 5px; }
+  .tl { position: relative; height: 46px; border-radius: 5px; overflow: hidden;
+        background: repeating-linear-gradient(135deg, #20232a 0 6px, #191b20 6px 12px); }
+  .seg { position: absolute; top: 0; bottom: 0; border-radius: 3px; opacity: .85; font-size: 11px; font-weight: 700; color: #06121f; padding: 3px 5px; cursor: pointer; transition: opacity .1s, outline .1s; }
+  .seg.dim { opacity: .3; }
+  .seg.sel { opacity: 1; outline: 2px solid #fff; z-index: 2; }
+  .seg.open { background-image: repeating-linear-gradient(90deg, transparent 0 4px, #ffffff40 4px 8px); }
+  .joint { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--muted); z-index: 3; }
+  .head { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--accent); z-index: 4; }
+  .head::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: var(--accent); }
+  .tl-legend { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .keys { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
+  .keys .big kbd { background: var(--accent); color: #000; border-color: #b39500; font-weight: 700; }
+  .matches { padding: 12px; flex: 1; overflow: auto; }
+  .match { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 6px; padding: 10px; margin-bottom: 10px; background: var(--panel2); cursor: pointer; }
+  .match.sel { border-color: var(--c); box-shadow: 0 0 0 1px var(--c); }
+  .match .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .match .hd b { flex: 1; }
+  .match .hd span { color: var(--muted); font-size: 12px; }
+  .types { display: flex; gap: 4px; margin-bottom: 8px; }
+  .types i { font-style: normal; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+  .types i.on { background: var(--c); color: #06121f; border-color: var(--c); }
+  .teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: center; }
+  .teams em { color: var(--muted); font-style: normal; font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px; min-height: 30px; }
+  .chips u { text-decoration: none; background: #323845; border-radius: 3px; padding: 1px 7px; font-size: 13px; }
+  .chips.focus { border-color: var(--accent); }
+  .chips .caret { color: var(--accent); }
+  .sugg { margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .sugg u { text-decoration: none; border: 1px dashed var(--line); border-radius: 3px; padding: 0 6px; margin-right: 4px; color: var(--text); }
+  .row2 { display: flex; gap: 6px; margin-top: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .row2 .inp { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; color: var(--text); }
+  .warn { color: var(--m3); font-size: 12px; margin-top: 6px; }
+  .title-prev { margin-top: 8px; font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 6px; }
+  .title-prev span { color: var(--text); }
+  .go { margin: 0 12px 12px; padding: 12px; border: 0; border-radius: 6px; background: var(--accent); color: #000; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .queue { border-top: 1px solid var(--line); padding: 12px; background: var(--bg); }
+  .job { font-size: 12px; margin-bottom: 8px; }
+  .job .nm { display: flex; justify-content: space-between; }
+  .job .nm span { color: var(--muted); }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .bar div { height: 100%; background: var(--m2); }
+  .job.done .nm span { color: var(--m2); }
+</style>
+</head>
+<body>
+<div class="note">Đây là mockup tĩnh để chốt bố cục. Video và số liệu là giả. Bấm vào một trận ở cột phải để xem các đoạn của trận đó sáng lên trên timeline.</div>
+<div class="app">
+  <div class="top">
+    <b>Cafe Badminton</b>
+    <span class="pill ok">● YouTube đã đăng nhập</span>
+    <span class="pill">Mặc định: Cafe Game · unlisted</span>
+    <div class="spacer"></div>
+    <span class="pill">Tự lưu 3 giây trước</span>
+  </div>
+
+  <aside>
+    <h4>Video trong input/</h4>
+    <div class="src on"><span class="chk">①</span>IMG_0412.mov<small>38:20 · hôm nay 19:02</small></div>
+    <div class="src on"><span class="chk">②</span>IMG_0413.mov<small>06:45 · hôm nay 19:41</small></div>
+    <div class="src">IMG_0414.mov<small>12:10 · hôm nay 19:50</small></div>
+    <div class="src">IMG_0415.mov<small>09:32 · hôm nay 20:05</small></div>
+    <p class="hint">Tick nhiều file để nối chúng thành một timeline liên tục theo thứ tự quay. Đây là cách ghép 2 recording của cùng một trận.</p>
+  </aside>
+
+  <main>
+    <div class="player">
+      [ video ]
+      <div class="tc">00:27:14 / 00:45:05</div>
+      <div class="state">● ĐANG GIỮ · Trận 2</div>
+    </div>
+
+    <div class="tl-wrap">
+      <div class="tl-files"><span style="width:85%">① IMG_0412.mov</span><span>② IMG_0413.mov</span></div>
+      <div class="tl" id="tl">
+        <div class="seg" data-m="1" style="left:2%;width:17%;background:var(--m1)">1</div>
+        <div class="seg" data-m="1" style="left:22%;width:11%;background:var(--m1)">1</div>
+        <div class="seg" data-m="2" style="left:38%;width:16%;background:var(--m2)">2</div>
+        <div class="seg open" data-m="2" style="left:57%;width:3.4%;background:var(--m2)"></div>
+        <div class="seg" data-m="3" style="left:68%;width:15.5%;background:var(--m3)">3</div>
+        <div class="seg" data-m="3" style="left:85.6%;width:12%;background:var(--m3)">3</div>
+        <div class="joint" style="left:85%"></div>
+        <div class="head" style="left:60.4%"></div>
+      </div>
+      <div class="tl-legend">
+        <span><span class="sw" style="background:repeating-linear-gradient(135deg,#444 0 3px,#222 3px 6px)"></span>Sọc xám = bị bỏ</span>
+        <span><span class="sw" style="background:var(--m1)"></span>Trận 1 (2 đoạn, bỏ 1 khúc giữa)</span>
+        <span><span class="sw" style="background:var(--m3)"></span>Trận 3 (nối qua 2 file)</span>
+      </div>
+    </div>
+
+    <div class="keys">
+      <span class="big"><kbd>I</kbd> bắt đầu giữ</span>
+      <span class="big"><kbd>O</kbd> ngừng giữ</span>
+      <span class="big"><kbd>N</kbd> sang trận mới</span>
+      <span><kbd>Space</kbd> phát/dừng</span>
+      <span><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> lùi/dừng/tới (bấm L nhiều lần: 2×, 4×, 8×)</span>
+      <span><kbd>←</kbd><kbd>→</kbd> 1 giây</span>
+      <span><kbd>⇧←</kbd><kbd>⇧→</kbd> 10 giây</span>
+      <span><kbd>,</kbd><kbd>.</kbd> 1 frame</span>
+      <span><kbd>⌘Z</kbd> hoàn tác</span>
+      <span><kbd>Enter</kbd> nhập tên người chơi</span>
+    </div>
+  </main>
+
+  <div class="right">
+    <div class="matches" id="matches">
+      <h4>Các trận (3)</h4>
+
+      <div class="match" data-m="1" style="--c:var(--m1)">
+        <div class="hd"><b>Trận 1</b><span>2 đoạn · 12:36</span></div>
+        <div class="types"><i>MS</i><i class="on">MD</i><i>WS</i><i>WD</i><i>XD</i></div>
+        <div class="teams">
+          <div class="chips"><u>Nam</u><u>Hùng</u></div><em>vs</em>
+          <div class="chips"><u>Tú</u><u>Long</u></div>
+        </div>
+        <div class="title-prev">Tiêu đề: <span>Nam/Hùng vs Tú/Long | Cafe Game (2026-11-20)</span></div>
+      </div>
+
+      <div class="match sel" data-m="2" style="--c:var(--m2)">
+        <div class="hd"><b>Trận 2</b><span>2 đoạn · đang đánh dấu</span></div>
+        <div class="types"><i>MS</i><i>MD</i><i>WS</i><i>WD</i><i class="on">XD</i></div>
+        <div class="teams">
+          <div class="chips"><u>Nam</u><u>Linh</u></div><em>vs</em>
+          <div class="chips focus"><u>Tú</u> Tr<span class="caret">|</span></div>
+        </div>
+        <div class="sugg">Gợi ý: <u>Trang</u><u>Trâm</u><u>Trung</u></div>
+        <div class="row2">Giải: <div class="inp">Cafe Game</div></div>
+      </div>
+
+      <div class="match" data-m="3" style="--c:var(--m3)">
+        <div class="hd"><b>Trận 3</b><span>2 đoạn · 12:24</span></div>
+        <div class="types"><i>MS</i><i class="on">MD</i><i>WS</i><i>WD</i><i>XD</i></div>
+        <div class="teams">
+          <div class="chips"></div><em>vs</em>
+          <div class="chips"></div>
+        </div>
+        <div class="warn">Chưa có tên người chơi, chưa upload được</div>
+      </div>
+    </div>
+
+    <button class="go">Xử lý &amp; upload 2 trận đã đủ thông tin</button>
+
+    <div class="queue">
+      <h4>Hàng đợi</h4>
+      <div class="job"><div class="nm">Long/Tú vs Nam/Hùng<span>Đang upload 62%</span></div><div class="bar"><div style="width:62%"></div></div></div>
+      <div class="job"><div class="nm">Linh vs Trang<span>Đang encode 18%</span></div><div class="bar"><div style="width:18%"></div></div></div>
+      <div class="job done"><div class="nm">Nam vs Hùng<span>✓ Xong · mở YouTube</span></div></div>
+    </div>
+  </div>
+</div>
+<script>
+  const pick = m => {
+    document.querySelectorAll('.match').forEach(e => e.classList.toggle('sel', e.dataset.m === m));
+    document.querySelectorAll('.seg').forEach(e => {
+      e.classList.toggle('sel', e.dataset.m === m);
+      e.classList.toggle('dim', e.dataset.m !== m);
+    });
+  };
+  document.querySelectorAll('.match, .seg').forEach(e => e.addEventListener('click', () => pick(e.dataset.m)));
+  pick('2');
+</script>
+</body>
+</html>

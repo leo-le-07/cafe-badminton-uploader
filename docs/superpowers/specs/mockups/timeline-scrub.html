@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Mockup timeline zoom</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel2: #232730; --line: #2f3440;
+    --text: #e6e8ec; --muted: #8b93a3; --accent: #ffd400;
+    --m1: #3fa7ff; --m2: #5ed38a; --m3: #ff8a4c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Helvetica Neue", sans-serif; }
+  .note { background: #2a2610; border-bottom: 1px solid #5a4d00; color: #ffe98a; padding: 8px 16px; font-size: 13px; }
+  .wrap { max-width: 1500px; margin: 0 auto; padding: 16px; }
+  .player { height: 240px; background: #000 linear-gradient(160deg, #10301f, #06140d); border-radius: 8px; position: relative; display: flex; align-items: center; justify-content: center; color: #3c6b52; }
+  .tc { position: absolute; left: 12px; bottom: 10px; font: 14px ui-monospace, Menlo, monospace; color: #fff; background: #0009; padding: 2px 8px; border-radius: 4px; }
+  .tlbox { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; }
+  .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .bar .sp { flex: 1; }
+  .bar button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 3px 10px; cursor: pointer; font-size: 13px; }
+  .bar input[type=range] { width: 220px; accent-color: var(--accent); }
+  .bar b { color: var(--text); font: 12px ui-monospace, Menlo, monospace; min-width: 150px; }
+  h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+  /* minimap */
+  .mini { position: relative; height: 18px; border-radius: 4px; background: #191b20; overflow: hidden; margin-bottom: 10px; cursor: pointer; }
+  .mini .s { position: absolute; top: 3px; bottom: 3px; border-radius: 2px; opacity: .8; }
+  .mini .view { position: absolute; top: 0; bottom: 0; border: 2px solid #fff; border-radius: 4px; background: #ffffff18; }
+  .mini .h { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+
+  /* detail */
+  .scroller { overflow-x: auto; overflow-y: hidden; border-radius: 5px; }
+  .inner { position: relative; height: 96px; }
+  .ruler { position: absolute; left: 0; right: 0; top: 0; height: 22px; border-bottom: 1px solid var(--line); }
+  .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #3a404d; font: 10px ui-monospace, Menlo, monospace; color: var(--muted); padding: 2px 0 0 4px; white-space: nowrap; }
+  .tick.minor { top: 14px; border-color: #2c313b; }
+  .track { position: absolute; left: 0; right: 0; top: 26px; height: 60px; border-radius: 4px;
+           background: repeating-linear-gradient(135deg, #20232a 0 6px, #191b20 6px 12px); }
+  .seg { position: absolute; top: 0; bottom: 0; border-radius: 4px; opacity: .88; font-size: 12px; font-weight: 700; color: #06121f; padding: 4px 10px; overflow: hidden; white-space: nowrap; }
+  .seg::before, .seg::after { content: ""; position: absolute; top: 0; bottom: 0; width: 7px; background: #ffffffcc; cursor: ew-resize; }
+  .seg::before { left: 0; border-radius: 4px 0 0 4px; } .seg::after { right: 0; border-radius: 0 4px 4px 0; }
+  .joint { position: absolute; top: 0; bottom: 0; width: 2px; background: #b9c0cf; z-index: 3; }
+  .joint span { position: absolute; top: 28px; left: 5px; font-size: 10px; color: #b9c0cf; white-space: nowrap; }
+  .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); z-index: 5; pointer-events: none; }
+  .head::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: var(--accent); }
+  .hover { position: absolute; top: 0; bottom: 0; width: 1px; background: #fff8; z-index: 4; pointer-events: none; display: none; }
+  .hover span { position: absolute; top: 24px; left: 6px; background: #000d; color: #fff; font: 11px ui-monospace, Menlo, monospace; padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+  ul { color: var(--muted); font-size: 13px; padding-left: 18px; margin: 14px 0 0; }
+  ul b { color: var(--text); }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="note">Mockup này chạy thật phần zoom: kéo thanh trượt, bấm + / −, hoặc giữ ⌘ (hay Ctrl) rồi cuộn chuột trên timeline. Bấm giữ chuột trái trên timeline rồi kéo qua lại: cột vàng chạy theo chuột, kéo sát mép thì timeline tự cuộn.</div>
+<div class="wrap">
+  <div class="player">[ video ]<div class="tc" id="tc"></div></div>
+
+  <div class="tlbox">
+    <div class="bar">
+      <h4 style="margin:0">Toàn bộ video</h4>
+      <div class="sp"></div>
+      <button id="fit">Vừa màn hình</button>
+      <button id="zo">−</button>
+      <input type="range" id="zoom" min="0" max="100" value="0">
+      <button id="zi">+</button>
+      <b id="zl"></b>
+    </div>
+    <div class="mini" id="mini"></div>
+    <div class="scroller" id="sc">
+      <div class="inner" id="inner">
+        <div class="ruler" id="ruler"></div>
+        <div class="track" id="track"></div>
+        <div class="hover" id="hover"><span></span></div>
+        <div class="head" id="head"></div>
+      </div>
+    </div>
+  </div>
+
+  <ul>
+    <li><b>Thanh mỏng phía trên</b> luôn hiện cả video. Khung trắng là phần đang được phóng to bên dưới; bấm vào đó để nhảy tới chỗ khác.</li>
+    <li><b>Zoom neo theo vị trí chuột</b>, nên điểm bạn đang nhìn không chạy mất khi phóng to.</li>
+    <li>Phóng hết cỡ thì <b>mỗi frame rộng khoảng 12px</b>, rê chuột là chọn đúng từng frame.</li>
+    <li><b>Hai mép trắng của mỗi đoạn</b> kéo được để chỉnh lại điểm cắt sau khi đã đánh dấu bằng <kbd>I</kbd> / <kbd>O</kbd>.</li>
+    <li>Khi đang phát, timeline tự cuộn theo con trỏ.</li>
+  </ul>
+</div>
+<script>
+const FPS = 30, DUR = 2705;
+const C = {1:'var(--m1)',2:'var(--m2)',3:'var(--m3)'};
+const SEGS = [[1,54,514],[1,595,893],[2,1028,1461],[2,1542,1634],[3,1839,2259],[3,2316,2640]];
+const JOINT = 2300;
+let head = 1634, pps, minPps, maxPps = 12 * FPS;
+const $ = id => document.getElementById(id);
+const sc = $('sc'), inner = $('inner'), track = $('track'), ruler = $('ruler'), mini = $('mini');
+const fmt = (t, frames) => {
+  const f = Math.round(t * FPS), s = Math.floor(f / FPS);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(Math.floor(s/3600))}:${p(Math.floor(s/60)%60)}:${p(s%60)}` + (frames ? `:${p(f%FPS)}` : '');
+};
+function render() {
+  const W = DUR * pps;
+  inner.style.width = W + 'px';
+  track.innerHTML = SEGS.map(([m,a,b]) =>
+    `<div class="seg" style="left:${a*pps}px;width:${(b-a)*pps}px;background:${C[m]}">Trận ${m} · ${fmt(b-a)}</div>`).join('')
+    + `<div class="joint" style="left:${JOINT*pps}px"><span>② IMG_0413.mov</span></div>`;
+  const steps = [1/FPS, 0.5, 1, 5, 10, 30, 60, 300, 600];
+  const major = steps.find(s => s * pps >= 90) || 600;
+  const minor = major / (major <= 1/FPS ? 1 : 5);
+  const from = sc.scrollLeft / pps, to = (sc.scrollLeft + sc.clientWidth) / pps;
+  let h = '';
+  for (let t = Math.floor(from / minor) * minor; t <= to; t += minor) {
+    const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6;
+    h += `<div class="tick ${isMajor ? '' : 'minor'}" style="left:${t*pps}px">${isMajor ? fmt(t, major < 1) : ''}</div>`;
+  }
+  ruler.innerHTML = h;
+  $('head').style.left = head * pps + 'px';
+  $('tc').textContent = fmt(head, true) + ' / ' + fmt(DUR, true);
+  const vis = sc.clientWidth / pps;
+  $('zl').textContent = 'đang xem ' + (vis >= 60 ? (vis/60).toFixed(1) + ' phút' : vis.toFixed(1) + ' giây');
+  mini.innerHTML = SEGS.map(([m,a,b]) => `<div class="s" style="left:${a/DUR*100}%;width:${(b-a)/DUR*100}%;background:${C[m]}"></div>`).join('')
+    + `<div class="h" style="left:${head/DUR*100}%"></div>`
+    + `<div class="view" style="left:${from/DUR*100}%;width:${Math.min(100, vis/DUR*100)}%"></div>`;
+}
+function setZoom(v, anchorX) {
+  v = Math.max(0, Math.min(100, v));
+  $('zoom').value = v;
+  if (anchorX == null) anchorX = head * pps - sc.scrollLeft;
+  if (anchorX < 0 || anchorX > sc.clientWidth) anchorX = sc.clientWidth / 2;
+  const t = (sc.scrollLeft + anchorX) / pps;
+  pps = minPps * Math.pow(maxPps / minPps, v / 100);
+  inner.style.width = DUR * pps + 'px';
+  sc.scrollLeft = t * pps - anchorX;
+  render();
+}
+function init() { minPps = sc.clientWidth / DUR; pps = minPps; setZoom(+$('zoom').value); }
+$('zoom').oninput = e => setZoom(+e.target.value);
+$('zi').onclick = () => setZoom(+$('zoom').value + 10);
+$('zo').onclick = () => setZoom(+$('zoom').value - 10);
+$('fit').onclick = () => setZoom(0);
+sc.addEventListener('scroll', render);
+sc.addEventListener('wheel', e => {
+  if (!(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  setZoom(+$('zoom').value - e.deltaY * 0.15, e.clientX - sc.getBoundingClientRect().left);
+}, { passive: false });
+const timeAt = e => Math.max(0, Math.min(DUR, Math.round((e.clientX - inner.getBoundingClientRect().left) / pps * FPS) / FPS));
+inner.addEventListener('mousemove', e => {
+  const t = timeAt(e), hv = $('hover');
+  hv.style.display = 'block'; hv.style.left = t * pps + 'px';
+  hv.firstChild.textContent = fmt(t, true);
+});
+inner.addEventListener('mouseleave', () => $('hover').style.display = 'none');
+let scrubbing = false, lastX = 0, edgeTimer = null;
+const scrubTo = x => {
+  head = Math.max(0, Math.min(DUR, Math.round((x - inner.getBoundingClientRect().left) / pps * FPS) / FPS));
+  render();
+};
+inner.addEventListener('mousedown', e => {
+  e.preventDefault(); scrubbing = true; lastX = e.clientX; scrubTo(lastX);
+  document.body.style.cursor = 'grabbing';
+  edgeTimer = setInterval(() => {
+    const r = sc.getBoundingClientRect();
+    if (lastX > r.right - 40) sc.scrollLeft += 14;
+    else if (lastX < r.left + 40) sc.scrollLeft -= 14;
+    else return;
+    scrubTo(Math.max(r.left, Math.min(r.right, lastX)));
+  }, 16);
+});
+document.addEventListener('mousemove', e => { if (scrubbing) { lastX = e.clientX; scrubTo(lastX); } });
+document.addEventListener('mouseup', () => { scrubbing = false; clearInterval(edgeTimer); document.body.style.cursor = ''; });
+mini.addEventListener('click', e => {
+  const r = mini.getBoundingClientRect();
+  sc.scrollLeft = (e.clientX - r.left) / r.width * DUR * pps - sc.clientWidth / 2;
+});
+document.addEventListener('keydown', e => {
+  if (e.key === '+' || e.key === '=') setZoom(+$('zoom').value + 10);
+  if (e.key === '-') setZoom(+$('zoom').value - 10);
+});
+window.addEventListener('resize', init);
+init();
+</script>
+</body>
+</html>
