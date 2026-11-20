@@ -22,6 +22,8 @@ import {
   keptDuration,
   previewTitle,
   matchProblems,
+  removeMatch,
+  recordedDate,
 } from '../../app/static/js/model.js';
 
 const SOURCES = [
@@ -598,4 +600,75 @@ test('addSource giữ nguồn bị thiếu trong phiên', () => {
   const r = addSource(s, 'c.mov', infos);
   assert.deepEqual(r.session.sources, ['a.mov', 'c.mov', 'b.mov', 'gone.mov']);
   assert.deepEqual(r.layout.map((e) => e.name), ['a.mov', 'c.mov', 'b.mov']);
+});
+
+test('removeMatch xoá trận, chọn trận trước đó và hoàn tác được', () => {
+  const s = editor({
+    sources: ['a.mov', 'b.mov'],
+    matches: [
+      match('m1', [{ source: 'a.mov', start: 10, end: 20 }]),
+      match('m2', [{ source: 'a.mov', start: 30, end: 40 }]),
+      match('m3', []),
+    ],
+    selected_match_id: 'm2',
+  });
+  const r = removeMatch(s, 'm2');
+  assert.deepEqual(r.session.matches.map((m) => m.id), ['m1', 'm3']);
+  assert.equal(r.session.selected_match_id, 'm1');
+  assert.deepEqual(undo(r).session, s.session);
+  // Removing a match that is not selected keeps the selection.
+  assert.equal(removeMatch(s, 'm3').session.selected_match_id, 'm2');
+  // The first match has no previous one.
+  const first = removeMatch(selectMatch(s, 'm1'), 'm1');
+  assert.equal(first.session.selected_match_id, null);
+  assert.equal(removeMatch(s, 'nope'), s);
+});
+
+test('removeMatch bỏ đoạn đang mở của trận đó, giữ đoạn mở của trận khác', () => {
+  const s = markIn(twoMatches('m2'), 60);
+  assert.deepEqual(s.open, { matchId: 'm2', start: 60 });
+  const r = removeMatch(s, 'm2');
+  assert.equal(r.open, null);
+  assert.deepEqual(undo(r).open, s.open);
+  const k = removeMatch(s, 'm1');
+  assert.deepEqual(k.open, s.open);
+});
+
+test('removeMatch không xoá trận đang khoá', () => {
+  const s = twoMatches('m1');
+  assert.equal(removeMatch(s, 'm1', new Set(['m1'])), s);
+});
+
+test('undo không hoàn tác thay đổi của trận đã khoá sau đó', () => {
+  const s0 = twoMatches('m1');
+  const s1 = updateMatch(s0, 'm1', { team1: ['Nam'] });
+  const s2 = updateMatch(s1, 'm2', { team1: ['Tú'] });
+  const locked = new Set(['m1']);
+  // Undoing m2's change leaves m1 alone: allowed.
+  const u = undo(s2, locked);
+  assert.deepEqual(u.session, s1.session);
+  // The next step would change locked m1: blocked.
+  assert.equal(undo(u, locked), u);
+  // A step that would bring back or drop a locked match is blocked too.
+  const s3 = newMatch(s2, 50, () => 'm3');
+  assert.equal(undo(s3, new Set(['m3'])), s3);
+  const s4 = removeMatch(s2, 'm2');
+  assert.equal(undo(s4, new Set(['m2'])), s4);
+  // Without locks undo works as before.
+  assert.deepEqual(undo(u).session, s0.session);
+});
+
+test('recordedDate lấy ngày quay của nguồn chứa đoạn đầu tiên', () => {
+  const dates = { 'a.mov': '2026-11-19', 'b.mov': '2026-11-20' };
+  const session = { sources: ['b.mov', 'a.mov'] };
+  const m = match('m1', [{ source: 'a.mov', start: 1, end: 2 }, { source: 'b.mov', start: 0, end: 1 }]);
+  assert.equal(recordedDate(m, session, dates, '2000-01-01'), '2026-11-19');
+  // No segment yet: the first session source.
+  assert.equal(recordedDate(match('m2', []), session, dates, '2000-01-01'), '2026-11-20');
+  // Nothing known: today.
+  assert.equal(recordedDate(match('m2', []), { sources: [] }, dates, '2000-01-01'), '2000-01-01');
+  assert.equal(
+    recordedDate(match('m3', [{ source: 'gone.mov', start: 0, end: 1 }]), session, dates, '2000-01-01'),
+    '2000-01-01',
+  );
 });

@@ -1,12 +1,15 @@
 // Editor page: holds the state, wires the player, timeline and source list,
 // handles the keyboard and autosaves the session.
 //
-// Exports for the modules of the right-hand column (Task 11):
-//   getState(), dispatch(fn), subscribe(listener), getBootstrap(),
+// Exports: getState(), dispatch(fn), subscribe(listener), getBootstrap(),
 //   getLocked(), setLocked(ids), getPlayhead(), seek(t), onEnterKey(handler),
-//   matchColor(index)
+//   saveNow(), matchColor(index)
+// The right-hand column (matches.js, queue.js) and the sign-in control
+// (auth.js) are created here once the bootstrap data has arrived.
 
 import * as api from './api.js';
+import { createAuth } from './auth.js';
+import { createMatches } from './matches.js';
 import {
   addSource,
   buildLayout,
@@ -21,6 +24,7 @@ import {
   undo,
 } from './model.js';
 import { createPlayer, formatTimecode } from './player.js';
+import { createQueue } from './queue.js';
 import { createTimeline, matchColor } from './timeline.js';
 
 export { matchColor };
@@ -33,6 +37,9 @@ let locked = new Set();
 let player = null;
 let timeline = null;
 let enterHandler = null;
+let auth = null;
+let matchesView = null;
+let queue = null;
 const listeners = new Set();
 
 const $ = (id) => document.getElementById(id);
@@ -58,8 +65,11 @@ export function subscribe(listener) {
 }
 
 // Ids of matches that are queued, running or done (no editing allowed).
+// queue.js sets them from every poll of the job list.
 export function setLocked(ids) {
-  locked = new Set(ids);
+  const next = new Set(ids);
+  if (next.size === locked.size && [...next].every((id) => locked.has(id))) return;
+  locked = next;
   renderAll();
 }
 
@@ -86,11 +96,6 @@ function renderAll() {
 // ---------------------------------------------------------------- top bar
 
 function renderTop() {
-  const auth = $('auth-pill');
-  auth.textContent = boot.auth.ok ? '● YouTube đã đăng nhập' : '○ YouTube chưa đăng nhập';
-  auth.classList.toggle('ok', boot.auth.ok);
-  auth.classList.toggle('bad', !boot.auth.ok);
-  if (boot.auth.channel) auth.title = boot.auth.channel;
   $('defaults-pill').textContent = `Mặc định: ${boot.defaults.tournament} · ${boot.defaults.privacy}`;
 }
 
@@ -104,6 +109,10 @@ function setSaveStatus(kind, text, detail = '') {
 // ---------------------------------------------------------------- sources
 
 const readableInfos = () => boot.sources.filter((s) => !s.missing && !s.unreadable);
+// Source name -> recording date (YYYY-MM-DD) for the title preview.
+const recordedDates = () => Object.fromEntries(
+  boot.sources.filter((s) => s.recorded_at).map((s) => [s.name, s.recorded_at.slice(0, 10)]),
+);
 const circled = (i) => String.fromCharCode(0x2460 + i);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const pad = (n) => String(n).padStart(2, '0');
@@ -139,7 +148,8 @@ function renderSources() {
     else info = [formatLength(s.duration), formatRecorded(s.recorded_at)].filter(Boolean).join(' · ');
     const cls = ['src', on ? 'on' : '', s.missing || s.unreadable ? 'missing' : ''].join(' ');
     const chk = idx >= 0 ? `<span class="chk">${circled(idx)}</span>` : on ? '<span class="chk">✕</span>' : '';
-    return `<div class="${cls}" role="checkbox" aria-checked="${on}" data-name="${esc(s.name)}">${chk}${esc(s.name)}<small>${info}</small></div>`;
+    const arch = s.archivable ? '<button type="button" class="arch">Lưu trữ</button>' : '';
+    return `<div class="${cls}" role="checkbox" aria-checked="${on}" data-name="${esc(s.name)}">${chk}${esc(s.name)}<small>${info}</small>${arch}</div>`;
   }).join('');
 }
 
@@ -156,6 +166,30 @@ function toggleSource(name) {
   const before = state;
   dispatch((s) => removeSource(s, name, locked));
   if (state === before) window.alert(`Không bỏ được ${name}: có trận đang trong hàng đợi dùng file này.`);
+}
+
+// Archiving moves the file out of INPUT_DIR and drops it from the stored
+// session, so the editor is reloaded from the server afterwards.
+async function archiveSource(name) {
+  if (!window.confirm('Chuyển file gốc sang thư mục lưu trữ?')) return;
+  try {
+    await saveNow();
+    await api.archiveSource(name);
+  } catch (err) {
+    window.alert(`Không lưu trữ được ${name}: ${err.message}`);
+    return;
+  }
+  await reload();
+}
+
+async function refreshSources() {
+  try {
+    boot.sources = await api.listSources();
+  } catch {
+    return; // the next finished job or reload tries again
+  }
+  renderSources();
+  renderMatches();
 }
 
 // ---------------------------------------------------------------- player overlay
@@ -223,16 +257,17 @@ function onKey(e) {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
     e.preventDefault();
-    dispatch(undo);
+    dispatch((s) => undo(s, locked));
     return;
   }
   if (mod || e.altKey) return;
 
   const once = !e.repeat;
+  const has = state.layout.length > 0; // I/O/N/Delete need a ticked source
   const actions = {
-    KeyI: () => once && dispatch((s) => markIn(s, t, undefined, locked)),
-    KeyO: () => once && dispatch((s) => markOut(s, t, locked)),
-    KeyN: () => once && dispatch((s) => newMatch(s, t, undefined, locked)),
+    KeyI: () => once && has && dispatch((s) => markIn(s, t, undefined, locked)),
+    KeyO: () => once && has && dispatch((s) => markOut(s, t, locked)),
+    KeyN: () => once && has && dispatch((s) => newMatch(s, t, undefined, locked)),
     Space: () => once && player.toggle(),
     KeyJ: () => once && player.shuttle(-1),
     KeyK: () => once && player.shuttle(0),
@@ -247,8 +282,8 @@ function onKey(e) {
     NumpadSubtract: () => timeline.zoomBy(-10),
     Enter: () => once && enterHandler && enterHandler(state.session.selected_match_id),
     NumpadEnter: () => once && enterHandler && enterHandler(state.session.selected_match_id),
-    Delete: () => dispatch((s) => deleteSegmentAt(s, t, locked)),
-    Backspace: () => dispatch((s) => deleteSegmentAt(s, t, locked)),
+    Delete: () => has && dispatch((s) => deleteSegmentAt(s, t, locked)),
+    Backspace: () => has && dispatch((s) => deleteSegmentAt(s, t, locked)),
   };
   const action = actions[e.code];
   if (!action) return;
@@ -262,7 +297,8 @@ function onKey(e) {
 let saved = null; // last session the server accepted
 let attempted = null; // last session sent, accepted or not
 let saveTimer = 0;
-let saving = false;
+let saving = null; // promise of the save in flight
+let saveError = null; // why `attempted` was refused
 
 function scheduleSave() {
   clearTimeout(saveTimer);
@@ -281,19 +317,33 @@ async function flushSave(opts) {
   }
   if (state.session === attempted) return; // refused already; wait for a change
   const session = state.session;
-  saving = true;
   attempted = session;
   setSaveStatus('saving', 'Đang lưu…');
-  try {
-    await api.saveSession(session, opts);
-    saved = session;
-    if (state.session === saved) setSaveStatus('ok', 'Đã lưu');
-  } catch (err) {
-    setSaveStatus('error', `Lưu thất bại: ${err.message}`, (err.errors || [err.message]).join('\n'));
-  } finally {
-    saving = false;
+  saving = api.saveSession(session, opts).then(
+    () => {
+      saved = session;
+      saveError = null;
+      if (state.session === saved) setSaveStatus('ok', 'Đã lưu');
+    },
+    (err) => {
+      saveError = err;
+      setSaveStatus('error', `Lưu thất bại: ${err.message}`, (err.errors || [err.message]).join('\n'));
+    },
+  );
+  await saving;
+  saving = null;
+  if (state.session !== attempted) await flushSave(opts);
+}
+
+// Saves now and resolves once the server holds the current session; throws
+// the server's error when it refuses it. Used before enqueue and archive,
+// which act on the stored session.
+export async function saveNow() {
+  while (state.session !== saved) {
+    if (saving) await saving;
+    else if (state.session === attempted) throw saveError;
+    else await flushSave();
   }
-  if (state.session !== attempted) flushSave(opts);
 }
 
 function flushOnLeave() {
@@ -304,19 +354,47 @@ function flushOnLeave() {
 
 // ---------------------------------------------------------------- bootstrap
 
-async function start() {
-  try {
-    boot = await api.bootstrap();
-  } catch (err) {
-    $('stage').textContent = `Không tải được dữ liệu: ${err.message}`;
-    return;
-  }
+// (Re)builds the editor from a bootstrap payload. Undo history starts over.
+function load(data) {
+  boot = data;
   const infos = new Map(readableInfos().map((s) => [s.name, s]));
   const layout = buildLayout(boot.session.sources.filter((n) => infos.has(n)).map((n) => infos.get(n)));
   state = createEditor(boot.session, layout, boot.defaults);
   saved = boot.session;
-  const ids = new Set(boot.session.matches.map((m) => m.id));
-  locked = new Set(boot.jobs.map((j) => j.match.id).filter((id) => ids.has(id)));
+  attempted = null;
+  locked = new Set(boot.jobs.map((j) => j.match.id));
+}
+
+function renderMatches() {
+  matchesView.render(state, { players: boot.players, locked, recordedDates: recordedDates() });
+  if (queue) queue.renderGo();
+}
+
+async function reload() {
+  let data;
+  try {
+    data = await api.bootstrap();
+  } catch (err) {
+    window.alert(`Không tải lại được dữ liệu: ${err.message}`);
+    return;
+  }
+  const prevLayout = state.layout;
+  load(data);
+  if (state.layout !== prevLayout) player.setLayout(state.layout);
+  setSaveStatus('ok', 'Đã lưu');
+  queue.render(boot.jobs);
+  renderAll();
+}
+
+async function start() {
+  let data;
+  try {
+    data = await api.bootstrap();
+  } catch (err) {
+    $('stage').textContent = `Không tải được dữ liệu: ${err.message}`;
+    return;
+  }
+  load(data);
 
   renderTop();
   setSaveStatus('ok', 'Đã lưu');
@@ -327,11 +405,31 @@ async function start() {
     onSelectMatch: (id) => dispatch((s) => selectMatch(s, id)),
   });
   player.onTime(renderPlayhead);
+
+  auth = createAuth($('auth'), boot.auth, () => queue && queue.renderGo());
+  matchesView = createMatches($('matches'), { dispatch, getState, getLocked });
+  queue = createQueue(
+    { go: $('go'), note: $('go-note'), panel: $('queue') },
+    {
+      getState,
+      getLocked,
+      isSignedIn: () => auth.get().ok,
+      saveNow,
+      onLocked: setLocked,
+      onDone: refreshSources,
+    },
+    boot.jobs,
+  );
+  subscribe(renderMatches);
+  onEnterKey((id) => matchesView.focusTeam1(id));
   renderAll();
+  queue.startPolling();
 
   $('sources').addEventListener('click', (e) => {
     const el = e.target.closest('.src');
-    if (el) toggleSource(el.dataset.name);
+    if (!el) return;
+    if (e.target.closest('.arch')) archiveSource(el.dataset.name);
+    else toggleSource(el.dataset.name);
   });
   document.addEventListener('keydown', onKey);
   document.addEventListener('visibilitychange', () => {

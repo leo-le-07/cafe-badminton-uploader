@@ -99,6 +99,9 @@ export function createTimeline(container, { onSeek, onMoveEdge, onSelectMatch })
       if (s.open) cls.push('open');
       if (s.matchId === selected) cls.push('sel');
       if (locked.has(s.matchId)) cls.push('locked');
+      // Too narrow for two handles: no handles, no padding, so it is drawn at
+      // its true width and edgeAt() treats it as scrub-only.
+      if ((s.end - s.start) * pps < 2 * EDGE_PX) cls.push('narrow');
       const label = s.open ? '' : `Trận ${i + 1} · ${formatClock(s.end - s.start)}`;
       html += `<div class="${cls.join(' ')}" style="left:${s.start * pps}px;width:${(s.end - s.start) * pps}px;background-color:${matchColor(i)}">${label}</div>`;
       if (!s.open) {
@@ -117,6 +120,11 @@ export function createTimeline(container, { onSeek, onMoveEdge, onSelectMatch })
   }
 
   function renderRuler() {
+    if (layout.length === 0) {
+      ruler.innerHTML = '';
+      zoomLabel.textContent = '';
+      return;
+    }
     const fps = Math.max(30, ...layout.map((e) => e.fps));
     const steps = [1 / fps, 0.5, 1, 5, 10, 30, 60, 300, 600, 1800, 3600];
     const major = steps.find((s) => s * pps >= 90) || 3600;
@@ -239,19 +247,19 @@ export function createTimeline(container, { onSeek, onMoveEdge, onSelectMatch })
   const xOf = (clientX) => clientX - inner.getBoundingClientRect().left;
   const timeOf = (x) => snap(layout, x / pps);
 
-  // The closest editable edge within EDGE_PX of x; on a tie, the segment the
-  // pointer is inside wins.
+  // The editable edge whose visible handle (EDGE_PX wide, inside the segment
+  // at each end) is under x. Segments too narrow for two handles have none:
+  // they can only be scrubbed until zoomed in.
   function edgeAt(x) {
-    let best = null;
     for (const s of segs) {
       if (s.open || locked.has(s.matchId)) continue;
-      for (const edge of ['start', 'end']) {
-        const d = Math.abs(x - s[edge] * pps);
-        const within = x >= s.start * pps && x < s.end * pps;
-        if (d <= EDGE_PX && (!best || d < best.d || (d === best.d && within))) best = { seg: s, edge, d };
-      }
+      const left = s.start * pps;
+      const right = s.end * pps;
+      if (right - left < 2 * EDGE_PX) continue;
+      if (x >= left && x < left + EDGE_PX) return { seg: s, edge: 'start' };
+      if (x >= right - EDGE_PX && x < right) return { seg: s, edge: 'end' };
     }
-    return best;
+    return null;
   }
 
   function flushDrag() {
@@ -286,7 +294,9 @@ export function createTimeline(container, { onSeek, onMoveEdge, onSelectMatch })
   }
 
   inner.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || layout.length === 0) return;
+    // A second pointer during a drag is ignored, so the drag's auto-scroll
+    // timer is never replaced and orphaned.
+    if (e.button !== 0 || layout.length === 0 || drag) return;
     e.preventDefault();
     // preventDefault keeps focus where it was; hand it back to the editor so
     // shortcuts work after pressing on the timeline.
@@ -297,6 +307,7 @@ export function createTimeline(container, { onSeek, onMoveEdge, onSelectMatch })
     if (hit) {
       const at = hit.seg[hit.edge];
       drag = { kind: 'edge', seg: hit.seg, edge: hit.edge, x: e.clientX, offset: at * pps - x };
+      onSelectMatch(hit.seg.matchId);
       onMoveEdge(hit.seg.matchId, hit.seg.segIndex, hit.edge, at, 'start');
     } else {
       const body = segs.find((s) => x >= s.start * pps && x < s.end * pps);

@@ -56,6 +56,23 @@ export function createPlayer(container, initialLayout) {
   const total = () => totalDuration(layout);
   const emit = () => listeners.forEach((cb) => cb(head));
 
+  // A file that cannot be played shows a message over the player and stops
+  // playback, instead of a silent black frame.
+  const errorEl = document.createElement('div');
+  errorEl.className = 'play-error';
+  errorEl.hidden = true;
+  container.appendChild(errorEl);
+
+  function showError(name) {
+    errorEl.textContent = `Không phát được video: ${name}`;
+    errorEl.hidden = false;
+    if (mode !== 'paused') pause();
+  }
+
+  const clearError = () => {
+    errorEl.hidden = true;
+  };
+
   function makeVideo(name) {
     const v = document.createElement('video');
     v.preload = 'metadata';
@@ -64,6 +81,12 @@ export function createPlayer(container, initialLayout) {
     v.src = mediaUrl(name);
     v.addEventListener('seeked', scheduleSeek);
     v.addEventListener('loadedmetadata', scheduleSeek);
+    // Shown only for the file on screen; another file's error shows when
+    // the playhead reaches it (see show()).
+    v.addEventListener('error', () => {
+      if (videos.get(name) === v && layout[current]?.name === name) showError(name);
+    });
+    v.addEventListener('playing', clearError);
     container.appendChild(v);
     return v;
   }
@@ -78,6 +101,8 @@ export function createPlayer(container, initialLayout) {
     current = index;
     const v = videos.get(layout[index].name);
     v.hidden = false;
+    if (v.error) showError(layout[index].name);
+    else clearError();
     if (mode === 'forward') startVideo(v);
     return v;
   }
@@ -85,7 +110,13 @@ export function createPlayer(container, initialLayout) {
   function startVideo(v) {
     v.playbackRate = rate;
     const p = v.play();
-    if (p) p.catch(() => {}); // AbortError when paused right away
+    if (!p) return;
+    p.catch((err) => {
+      // AbortError: paused again before playback started; nothing is wrong.
+      if (err && err.name === 'AbortError') return;
+      const name = [...videos].find(([, x]) => x === v)?.[0];
+      if (name) showError(name);
+    });
   }
 
   function scheduleSeek() {
@@ -219,6 +250,7 @@ export function createPlayer(container, initialLayout) {
     layout = next;
     current = -1;
     primed = -1;
+    clearError();
     for (const v of videos.values()) v.hidden = true;
     if (layout.length === 0) {
       if (mode !== 'paused') pause();

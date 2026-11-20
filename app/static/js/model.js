@@ -136,9 +136,16 @@ function commit(state, changes) {
   return { ...state, ...changes, undo: [...state.undo, entry].slice(-UNDO_LIMIT) };
 }
 
-export function undo(state) {
+// Undo is refused when the step would change, bring back or drop a locked
+// match (one sent to the queue after the step was recorded).
+export function undo(state, locked = NO_LOCKS) {
   if (state.undo.length === 0) return state;
   const entry = state.undo[state.undo.length - 1];
+  for (const id of locked) {
+    const now = findMatch(state.session, id);
+    const then = findMatch(entry.session, id);
+    if (now !== then && JSON.stringify(now) !== JSON.stringify(then)) return state;
+  }
   return { ...state, ...entry, undo: state.undo.slice(0, -1) };
 }
 
@@ -337,6 +344,22 @@ export function updateMatch(state, id, fields, locked = NO_LOCKS) {
   return commit(state, { session: { ...state.session, matches } });
 }
 
+// Removes match `id`, its open segment if any, and selects the match before
+// it (or none) when it was selected.
+export function removeMatch(state, id, locked = NO_LOCKS) {
+  const { session } = state;
+  const index = session.matches.findIndex((m) => m.id === id);
+  if (index < 0 || locked.has(id)) return state;
+  const matches = session.matches.filter((m) => m.id !== id);
+  const selected = session.selected_match_id === id
+    ? (session.matches[index - 1]?.id ?? null)
+    : session.selected_match_id;
+  return commit(state, {
+    session: { ...session, matches, selected_match_id: selected },
+    open: state.open && state.open.matchId === id ? null : state.open,
+  });
+}
+
 function hasNames(m) {
   return [...m.team1, ...m.team2].some((name) => name.trim());
 }
@@ -421,6 +444,14 @@ export function keptDuration(match) {
 // Mirrors video_prep.create_title.
 export function previewTitle(match, date) {
   return `${match.team1.join('/')} vs ${match.team2.join('/')} | ${match.tournament} (${date})`;
+}
+
+// Recording date (YYYY-MM-DD) for the title: that of the source holding the
+// match's first segment; with no segment yet, that of the first session
+// source; `today` when unknown. `dates` maps source name -> date.
+export function recordedDate(match, session, dates, today) {
+  const source = match.segments.length > 0 ? match.segments[0].source : session.sources[0];
+  return (source !== undefined && dates[source]) || today;
 }
 
 // Mirrors app.models.match_problems.

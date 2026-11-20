@@ -10,7 +10,7 @@
 <div class="app">
   <div class="top">
     <b>Cafe Badminton</b>
-    <span class="pill" id="auth-pill">…</span>
+    <span class="auth" id="auth"></span>
     <span class="pill" id="defaults-pill"></span>
     <div class="spacer"></div>
     <span class="pill" id="save-pill"></span>
@@ -48,10 +48,13 @@
     </div>
   </main>
 
-  <!-- Right column: match cards, upload button and queue (Task 11). -->
   <div class="right" id="right">
     <div class="matches" id="matches"></div>
-    <div id="queue"></div>
+    <div class="go-box">
+      <button type="button" class="go" id="go" disabled>Xử lý &amp; upload 0 trận đã đủ thông tin</button>
+      <div class="go-note" id="go-note"></div>
+    </div>
+    <div class="queue" id="queue"></div>
   </div>
 </div>
 <script type="module" src="/static/js/main.js"></script>
