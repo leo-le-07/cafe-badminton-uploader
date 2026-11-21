@@ -241,17 +241,20 @@ def test_sources_sorted_by_recorded_at_with_problems_last(client):
     assert b["duration"] == 600.0 and b["recorded_at"] == RECORDED_AT["b.mov"]
     assert b["missing"] is False and b["unreadable"] is False
     assert b["archivable"] is False
+    assert b["deletable"] is True
     assert sources[3] == {
         "name": "broken.mov",
         "missing": False,
         "unreadable": True,
         "archivable": False,
+        "deletable": True,
     }
     assert sources[4] == {
         "name": "gone.mov",
         "missing": True,
         "unreadable": False,
         "archivable": False,
+        "deletable": False,
     }
 
 
@@ -783,6 +786,78 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
     run_until_idle(queue)
     assert client.post("/api/sources/b.mov/archive").status_code == 200
     assert stored_content() == session([])
+
+
+# ---- delete (to the trash) -----------------------------------------------------
+
+
+def test_delete_source_moves_unused_file_to_trash(client, queue, _trash_dir):
+    add_source("a.mov")
+    add_source("b.mov")
+    put(client, session(["a.mov", "b.mov"], match("m1", ("b.mov", 0, 10))))
+    sources = {s["name"]: s for s in client.get("/api/sources").json}
+    assert sources["a.mov"]["deletable"] is True
+    assert sources["b.mov"]["deletable"] is False  # m1 is still being edited
+
+    revision = store.load_session().revision
+    r = client.post("/api/sources/a.mov/delete")
+
+    assert r.status_code == 200 and r.json == {"ok": True}
+    assert not (config.INPUT_DIR / "a.mov").exists()
+    assert (_trash_dir / "a.mov").exists()
+    stored = store.load_session()
+    assert stored.revision == revision + 1
+    assert stored.sources == ["b.mov"]
+    assert [m.id for m in stored.matches] == ["m1"]
+
+
+def test_delete_source_refused_while_a_match_needs_it(client, queue, signed_in):
+    add_source("a.mov")
+    add_source("b.mov")
+    put(
+        client,
+        session(
+            ["a.mov", "b.mov"],
+            match("m1", ("a.mov", 0, 10)),
+            match("m2", ("b.mov", 0, 10)),
+        ),
+    )
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
+
+    assert client.post("/api/sources/a.mov/delete").status_code == 409  # queued
+    assert client.post("/api/sources/b.mov/delete").status_code == 409  # editing
+    assert client.post("/api/sources/zzz.mov/delete").status_code == 404
+    assert (config.INPUT_DIR / "a.mov").exists()
+    assert (config.INPUT_DIR / "b.mov").exists()
+
+
+def test_delete_source_refused_while_a_job_outside_the_session_needs_it(
+    client, queue, signed_in
+):
+    add_source("a.mov")
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
+    # Even if the stored session no longer lists the match, its job does.
+    store.save_session(Session.from_dict(session([])))
+
+    assert client.post("/api/sources/a.mov/delete").status_code == 409
+    assert (config.INPUT_DIR / "a.mov").exists()
+
+
+def test_delete_source_after_its_matches_are_done(client, queue, signed_in, _trash_dir):
+    add_source("a.mov")
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
+    run_until_idle(queue)
+
+    assert client.post("/api/sources/a.mov/delete").status_code == 200
+    assert (_trash_dir / "a.mov").exists()
+    assert store.load_session().sources == []
+
+
+def test_delete_source_needs_editor_header(bare_client, source):
+    assert bare_client.post("/api/sources/a.mov/delete").status_code == 403
+    assert source.exists()
 
 
 # ---- auth ----------------------------------------------------------------------

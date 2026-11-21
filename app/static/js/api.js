@@ -54,6 +54,7 @@ export const enqueue = (ids, mode) => request('POST', '/api/jobs', { match_ids: 
 export const retry = (id) => request('POST', `/api/jobs/${part(id)}/retry`);
 export const unqueue = (id) => request('POST', `/api/jobs/${part(id)}/unqueue`);
 export const archiveSource = (name) => request('POST', `/api/sources/${part(name)}/archive`);
+export const deleteSource = (name) => request('POST', `/api/sources/${part(name)}/delete`);
 export const authStatus = () => request('GET', '/api/auth');
 export const login = () => request('POST', '/api/auth/login');
 

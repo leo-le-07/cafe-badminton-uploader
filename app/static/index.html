@@ -22,7 +22,11 @@
   </div>
 
   <aside>
-    <h4>Video trong input/</h4>
+    <div class="src-head">
+      <h4>Video trong input/</h4>
+      <button type="button" id="sources-refresh" title="Tải lại danh sách video trong thư mục input" aria-label="Tải lại danh sách video">↻</button>
+    </div>
+    <p class="hint err" id="sources-error" role="alert" hidden>Chưa tải lại được danh sách, hãy thử lại.</p>
     <div id="sources"></div>
     <p class="hint">Tick nhiều file để nối chúng thành một timeline liên tục theo thứ tự quay. Đây là cách ghép 2 recording của cùng một trận.</p>
   </aside>

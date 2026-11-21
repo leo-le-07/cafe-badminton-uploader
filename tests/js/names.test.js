@@ -7,6 +7,7 @@ import {
   nameCounts,
   splitNames,
   suggestNames,
+  teamIsFull,
 } from '../../app/static/js/names.js';
 
 const counts = (obj) => new Map(Object.entries(obj));
@@ -68,4 +69,18 @@ test('addNames bỏ tên rỗng và tên trùng trong cùng trận, không phân
   assert.deepEqual(addNames(m, 'team1', ['nam', 'TÚ', ' ', 'Long', 'long']), ['Nam', 'Long']);
   assert.equal(addNames(m, 'team2', ['tú']), m.team2);
   assert.deepEqual(addNames(m, 'team2', ['  Linh  ']), ['Tú', 'Linh']);
+});
+
+test('teamIsFull: đơn đủ 1 người, đôi đủ 2 người', () => {
+  const m = (match_type, team1) => ({ match_type, team1, team2: [] });
+  for (const type of ['ms', 'ws']) {
+    assert.equal(teamIsFull(m(type, []), 'team1'), false);
+    assert.equal(teamIsFull(m(type, ['Nam']), 'team1'), true);
+  }
+  for (const type of ['md', 'wd', 'xd']) {
+    assert.equal(teamIsFull(m(type, ['Nam']), 'team1'), false);
+    assert.equal(teamIsFull(m(type, ['Nam', 'Hùng']), 'team1'), true);
+    assert.equal(teamIsFull(m(type, ['Nam', 'Hùng', 'Tú']), 'team1'), true);
+  }
+  assert.equal(teamIsFull({ match_type: 'md', team1: ['Nam', 'Hùng'], team2: ['Tú'] }, 'team2'), false);
 });

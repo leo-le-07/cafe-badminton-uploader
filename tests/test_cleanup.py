@@ -7,7 +7,8 @@ import uploader
 import utils
 from app import store
 from app.models import Job, Match, Segment
-from cleanup import archive_source, archive_workspace
+import cleanup
+from cleanup import archive_source, archive_workspace, trash_source
 from custom_exceptions import NoUploadedRecordError
 
 
@@ -145,3 +146,35 @@ class TestArchiveSource:
     def test_rejects_names_that_are_not_plain_file_names(self, name):
         with pytest.raises(ValueError):
             archive_source(name)
+
+
+class TestTrashSource:
+    def test_moves_source_into_trash(self):
+        src = config.INPUT_DIR / "IMG_0001.MOV"
+        src.write_bytes(b"raw")
+
+        dest = trash_source("IMG_0001.MOV")
+
+        assert dest == cleanup.TRASH_DIR / "IMG_0001.MOV"
+        assert not src.exists()
+        assert dest.read_bytes() == b"raw"
+
+    def test_never_overwrites_a_file_already_in_the_trash(self):
+        cleanup.TRASH_DIR.mkdir()
+        (cleanup.TRASH_DIR / "IMG_0001.MOV").write_bytes(b"old")
+        (config.INPUT_DIR / "IMG_0001.MOV").write_bytes(b"new")
+
+        dest = trash_source("IMG_0001.MOV")
+
+        assert dest == cleanup.TRASH_DIR / "IMG_0001-1.MOV"
+        assert dest.read_bytes() == b"new"
+        assert (cleanup.TRASH_DIR / "IMG_0001.MOV").read_bytes() == b"old"
+
+    def test_missing_source_raises(self):
+        with pytest.raises(FileNotFoundError):
+            trash_source("missing.mov")
+
+    @pytest.mark.parametrize("name", ["../x.mov", "sub/x.mov", "", ".."])
+    def test_rejects_names_that_are_not_plain_file_names(self, name):
+        with pytest.raises(ValueError):
+            trash_source(name)

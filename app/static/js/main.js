@@ -144,10 +144,16 @@ function renderSources() {
     else info = [formatLength(s.duration), formatRecorded(s.recorded_at)].filter(Boolean).join(' · ');
     const cls = ['src', on ? 'on' : '', s.missing || s.unreadable ? 'missing' : ''].join(' ');
     const chk = idx >= 0 ? `<span class="chk">${circled(idx)}</span>` : on ? '<span class="chk">✕</span>' : '';
-    const arch = s.archivable
-      ? `<button type="button" class="arch"${staleError ? ' disabled' : ''}>Lưu trữ</button>`
-      : '';
-    return `<div class="${cls}" role="checkbox" aria-checked="${on}" data-name="${esc(s.name)}">${chk}${esc(s.name)}<small>${info}</small>${arch}</div>`;
+    const off = staleError ? ' disabled' : '';
+    const arch = s.archivable ? `<button type="button" class="arch"${off}>Lưu trữ</button>` : '';
+    let del = '';
+    if (!s.missing) {
+      del = s.deletable
+        ? `<button type="button" class="del" title="Chuyển file vào Thùng rác"${off}>Xoá</button>`
+        : '<button type="button" class="del" disabled title="Còn trận chưa upload xong dùng file này">Xoá</button>';
+    }
+    const acts = arch || del ? `<div class="src-acts">${arch}${del}</div>` : '';
+    return `<div class="${cls}" role="checkbox" aria-checked="${on}" data-name="${esc(s.name)}">${chk}${esc(s.name)}<small>${info}</small>${acts}</div>`;
   }).join('');
 }
 
@@ -181,14 +187,41 @@ async function archiveSource(name) {
   await reload();
 }
 
+// Deleting moves the file from INPUT_DIR to the macOS trash (it can be put
+// back from there) and drops it from the stored session, like archiving.
+async function deleteSource(name) {
+  if (staleError) return;
+  if (!window.confirm(`Xoá ${name} khỏi thư mục input?\nFile được chuyển vào Thùng rác, có thể khôi phục từ đó.`)) return;
+  try {
+    await saveNow();
+    await api.deleteSource(name);
+  } catch (err) {
+    window.alert(`Không xoá được ${name}: ${err.message}`);
+    return;
+  }
+  await reload();
+}
+
 async function refreshSources() {
   try {
     boot.sources = await api.listSources();
   } catch {
-    return; // the next finished job or reload tries again
+    return false; // the next finished job, press of "Tải lại" or reload tries again
   }
   renderSources();
   renderMatches();
+  return true;
+}
+
+// "Tải lại": picks up files added to (or removed from) INPUT_DIR without
+// reloading the page.
+async function onRefreshSources() {
+  const button = $('sources-refresh');
+  if (button.disabled) return;
+  button.disabled = true;
+  const ok = await refreshSources();
+  button.disabled = false;
+  $('sources-error').hidden = ok;
 }
 
 // ---------------------------------------------------------------- player overlay
@@ -473,6 +506,7 @@ async function start() {
   });
   player.onTime(renderPlayhead);
 
+  $('sources-refresh').addEventListener('click', onRefreshSources);
   auth = createAuth($('auth'), boot.auth, () => queue && queue.renderGo());
   const modeState = createModeState(boot.mode, api.setMode);
   createModeToggle($('mode'), {
@@ -510,6 +544,8 @@ async function start() {
     const el = e.target.closest('.src');
     if (!el) return;
     if (e.target.closest('.arch')) archiveSource(el.dataset.name);
+    else if (e.target.closest('.del')) deleteSource(el.dataset.name);
+    else if (e.target.closest('.src-acts')) return; // a click on a disabled button or the gap
     else toggleSource(el.dataset.name);
   });
   document.addEventListener('keydown', onKey);

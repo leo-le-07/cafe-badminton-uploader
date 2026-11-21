@@ -64,3 +64,10 @@ export function addNames(match, side, names) {
   }
   return added.length ? [...match[side], ...added] : match[side];
 }
+
+// Whether team `side` already has every player its match type needs: one for
+// singles (ms, ws), two for doubles.
+export function teamIsFull(match, side) {
+  const size = match.match_type === 'ms' || match.match_type === 'ws' ? 1 : 2;
+  return match[side].length >= size;
+}

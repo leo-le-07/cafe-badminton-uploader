@@ -54,17 +54,33 @@ def archive_workspace(match_id: str) -> Path:
     return dest
 
 
-def archive_source(name: str) -> Path:
-    """Move a source file from INPUT_DIR to COMPLETED_DIR/sources/."""
+def _move_source(name: str, dest_dir: Path) -> Path:
+    """Move a source file from INPUT_DIR into `dest_dir`, never overwriting."""
     if not name or name in {".", ".."} or Path(name).name != name:
         raise ValueError(f"Not a plain file name: {name!r}")
     src = config.INPUT_DIR / name
     if not src.is_file():
         raise FileNotFoundError(f"Source not found: {src}")
 
-    dest_dir = config.COMPLETED_DIR / SOURCES_DIR
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = _free_path(dest_dir / name)
     shutil.move(str(src), str(dest))
+    return dest
+
+
+def archive_source(name: str) -> Path:
+    """Move a source file from INPUT_DIR to COMPLETED_DIR/sources/."""
+    dest = _move_source(name, config.COMPLETED_DIR / SOURCES_DIR)
     logger.info(f"Archived source {name} to {dest}")
+    return dest
+
+
+# The macOS trash of the user running the app; tests point it at a temp folder.
+TRASH_DIR = Path.home() / ".Trash"
+
+
+def trash_source(name: str) -> Path:
+    """Move a source file from INPUT_DIR to the trash, so it can be put back."""
+    dest = _move_source(name, TRASH_DIR)
+    logger.info(f"Moved source {name} to the trash: {dest}")
     return dest

@@ -4,6 +4,8 @@
   --bg: #14161a; --panel: #1c1f25; --panel2: #232730; --line: #2f3440;
   --text: #e6e8ec; --muted: #8b93a3; --accent: #ffd400;
   --m1: #3fa7ff; --m2: #5ed38a; --m3: #ff8a4c; --danger: #ff5d5d;
+  /* One colour per upload mode, the same on the switch, the upload button and the queue rows. */
+  --dev: #c3c9d4; --production: #5ed38a;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -22,10 +24,11 @@ aside, main, .right { grid-row: 3; }
 /* Dev / Production switch */
 .mode { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
 .mode button { font: inherit; font-size: 12px; padding: 3px 11px; border: 0; background: var(--panel2); color: var(--muted); cursor: pointer; white-space: nowrap; }
-.mode button[aria-pressed="true"] { background: var(--line); color: var(--text); font-weight: 600; cursor: default; }
+.mode button[aria-pressed="true"] { background: var(--dev); color: #000; font-weight: 600; cursor: default; }
 .mode button:disabled { cursor: default; }
-.mode[data-mode="production"] { border-color: var(--danger); }
-.mode[data-mode="production"] button[aria-pressed="true"] { background: var(--danger); color: #000; }
+.mode[data-mode="dev"] { border-color: var(--dev); }
+.mode[data-mode="production"] { border-color: var(--production); }
+.mode[data-mode="production"] button[aria-pressed="true"] { background: var(--production); }
 .pill.ok { color: var(--m2); }
 .pill.bad { color: var(--danger); border-color: #5a2a2a; }
 aside, main, .right { overflow: auto; }
@@ -34,6 +37,11 @@ aside { border-right: 1px solid var(--line); padding: 12px; background: var(--pa
 h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 
 /* sources */
+.src-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.src-head h4 { margin: 0; }
+.src-head button { font: inherit; font-size: 14px; line-height: 1; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.src-head button:hover { color: var(--text); border-color: var(--muted); }
+.src-head button:disabled { opacity: .5; cursor: default; }
 .src { padding: 8px; border-radius: 6px; border: 1px solid var(--line); margin-bottom: 6px; background: var(--panel2); cursor: pointer; user-select: none; word-break: break-all; }
 .src.on { border-color: var(--accent); }
 .src small { display: block; color: var(--muted); font-size: 12px; }
@@ -41,6 +49,7 @@ h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: up
 .src.missing { opacity: .45; cursor: default; }
 .src.missing.on { cursor: pointer; }
 .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+.hint.err { color: var(--danger); margin: 0 0 8px; }
 
 /* centre */
 main { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -110,10 +119,14 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 .auth .login:disabled { background: var(--panel2); color: var(--muted); border: 1px solid var(--line); cursor: default; }
 .auth .login-error { color: var(--m3); font-size: 12px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* source card: archive */
-.src .arch { display: block; margin-top: 6px; font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--m2); cursor: pointer; }
+/* source card: archive, delete */
+.src-acts { display: flex; gap: 6px; margin-top: 6px; }
+.src .arch, .src .del { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+.src .arch { color: var(--m2); }
 .src .arch:hover { border-color: var(--m2); }
-.src .arch:disabled { color: var(--muted); border-color: var(--line); cursor: default; }
+.src .del { color: var(--danger); margin-left: auto; }
+.src .del:hover { border-color: var(--danger); }
+.src .arch:disabled, .src .del:disabled { color: var(--muted); border-color: var(--line); cursor: default; opacity: .6; }
 
 /* right column: match cards (from the mockup) */
 .matches { padding: 12px; flex: 1; min-height: 0; overflow: auto; }
@@ -152,8 +165,9 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 
 /* upload button and queue */
 .go-box { padding: 0 12px 12px; }
-.go { width: 100%; padding: 12px; border: 0; border-radius: 6px; background: var(--accent); color: #000; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; }
-.go:disabled { background: var(--panel2); color: var(--muted); border: 1px solid var(--line); cursor: default; }
+.go { width: 100%; padding: 12px; border: 0; border-radius: 6px; background: var(--dev); color: #000; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; }
+.go[data-mode="production"] { background: var(--production); }
+.go:disabled, .go[data-mode]:disabled { background: var(--panel2); color: var(--muted); border: 1px solid var(--line); cursor: default; }
 .go-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .go-note:empty { display: none; }
 .go-note.err { color: var(--m3); }
@@ -164,8 +178,8 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 .job .nm { display: flex; justify-content: space-between; gap: 8px; }
 .job .nm .t { font-style: normal; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job .nm span { color: var(--muted); flex-shrink: 0; margin-left: auto; }
-.job .nm .privacy { flex-shrink: 0; font-weight: 400; font-size: 11px; padding: 0 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
-.job .nm .privacy.public { color: var(--danger); border-color: var(--danger); }
+.job .nm .privacy { flex-shrink: 0; font-weight: 400; font-size: 11px; padding: 0 6px; border-radius: 99px; border: 1px solid var(--dev); color: var(--dev); }
+.job .nm .privacy.public { color: var(--production); border-color: var(--production); }
 .job .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 4px; overflow: hidden; }
 .job .bar div { height: 100%; background: var(--m2); }
 .job.done .nm span, .job.done .nm a { color: var(--m2); }

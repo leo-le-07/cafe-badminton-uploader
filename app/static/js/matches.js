@@ -15,7 +15,7 @@ import {
   updateMatch,
 } from './model.js';
 import { formatLength, pad } from './format.js';
-import { addNames, nameCounts, splitNames, suggestNames } from './names.js';
+import { addNames, nameCounts, splitNames, suggestNames, teamIsFull } from './names.js';
 import { matchColor } from './timeline.js';
 
 const TYPES = ['ms', 'md', 'ws', 'wd', 'xd'];
@@ -309,8 +309,7 @@ export function createMatches(container, deps) {
       commitPending(card, input);
       return;
     }
-    splitTyped(card, input);
-    showSuggestions(card, sideOf(input));
+    showSuggestions(card, sideOf(splitTyped(card, input)));
   });
 
   // Esc throws away the half-typed name; clicking away or Tab keeps it.
@@ -330,14 +329,22 @@ export function createMatches(container, deps) {
     if (sugg && sugg.card === card) hideSuggestions();
   });
 
-  // "Tú," makes a chip and keeps typing in the same input.
+  // "Tú," makes a chip and keeps typing in the same input. When that comma
+  // completes team 1 (one name in singles, two in doubles), the caret moves on
+  // to team 2. Returns the input that has the caret afterwards.
   function splitTyped(card, input) {
-    if (!input.value.includes(',')) return;
+    if (!input.value.includes(',')) return input;
     const parts = input.value.split(',');
     const rest = parts.pop().trimStart();
     input.value = rest;
     const names = splitNames(parts.join(','));
     if (names.length) addToTeam(card, sideOf(input), names);
+    const m = matchOf(card.id);
+    if (sideOf(input) === 'team1' && rest === '' && m && teamIsFull(m, 'team1')) {
+      card.inputs[1].focus();
+      return card.inputs[1];
+    }
+    return input;
   }
 
   container.addEventListener('input', (e) => {
@@ -349,8 +356,8 @@ export function createMatches(container, deps) {
     }
     if (!card.inputs.includes(e.target)) return;
     const input = e.target;
-    if (!e.isComposing && !composing.has(input)) splitTyped(card, input);
-    showSuggestions(card, sideOf(input));
+    const caret = !e.isComposing && !composing.has(input) ? splitTyped(card, input) : input;
+    showSuggestions(card, sideOf(caret));
   });
 
   container.addEventListener('paste', (e) => {

@@ -27,7 +27,7 @@ uv run ruff format .             # Format
 ## Safety
 
 - `token.json` holds real YouTube credentials for the channel. While testing, never trigger a real enqueue (`POST /api/jobs`), upload, thumbnail set or login (`POST /api/auth/login`, `main.py auth`). Tests mock the YouTube API; keep it that way.
-- Never modify, move or delete files in `INPUT_DIR`; they are the original recordings. Only the user's "Lưu trữ" action moves a source.
+- Never modify, move or delete files in `INPUT_DIR`; they are the original recordings. Only the user's "Lưu trữ" (to `COMPLETED_DIR/sources/`) and "Xoá" (to the macOS trash, `~/.Trash`) actions move a source. Tests point `cleanup.TRASH_DIR` at a temp folder (autouse fixture in `tests/conftest.py`); keep it that way.
 - Only one instance runs per `DATA_DIR`: `main.py` holds an exclusive `flock` on `DATA_DIR/app.lock` and exits with a message if another instance holds it. If the owner may be running the app, do not start a second one against the same `DATA_DIR`.
 
 ## Architecture
@@ -56,7 +56,7 @@ Flask server (app/server.py) ── page, original videos via HTTP Range, JSON A
 - Every mutating `/api/*` request (POST/PUT/PATCH/DELETE) must carry `X-Cafe-Editor: 1` (403 otherwise); `api.js` sends it. This stops other websites from triggering actions with simple cross-origin POSTs.
 - `upload.json` and the upload session are written atomically; an unreadable `upload.json` raises `CorruptUploadRecordError` and turns the job into an error (never an upload). At startup, archives in `COMPLETED_DIR` whose `upload.json` holds a video id stay locked even if their `job.json` is missing or unreadable.
 - Problems that block queuing (`match_problems` in Python, `matchProblems` in JS) must stay word for word identical; `tests/test_rules_parity.py` runs the same cases through both.
-- `cleanup` deletes `processed.mov` and the upload session, writes `segments.json`, and moves the workspace to `COMPLETED_DIR/<recorded_date>_<match_id>/`. Source files are only moved (to `COMPLETED_DIR/sources/`) when the user presses "Lưu trữ" on a source whose matches are all done.
+- `cleanup` deletes `processed.mov` and the upload session, writes `segments.json`, and moves the workspace to `COMPLETED_DIR/<recorded_date>_<match_id>/`. Source files are only moved (to `COMPLETED_DIR/sources/`) when the user presses "Lưu trữ" on a source whose matches are all done, or to the trash when the user presses "Xoá" on a source that no unfinished match (in the editor or the queue) uses.
 - The title date is the recording date of the match's first source (`media_probe`), not the upload date. Privacy comes from the job's mode and is set at upload time.
 - The editor plays the original `.mov`/`.mp4` files directly; there is no proxy. `/media/<name>` only serves files that are directly in `INPUT_DIR`.
 - All JSON writes in `app/store.py` are atomic (temp file + `os.replace`); an unreadable file is renamed `*.corrupt-<timestamp>`, never deleted.
@@ -68,14 +68,14 @@ Flask server (app/server.py) ── page, original videos via HTTP Range, JSON A
 - `app/store.py` — atomic JSON persistence: session, mode, jobs, player names (seeded once from `COMPLETED_DIR/*/metadata.json`)
 - `app/pipeline.py` — the per-match steps
 - `app/jobs.py` — `JobQueue`: background thread, state machine, quota wait, retry, unqueue
-- `app/server.py` — Flask app factory, JSON API (`/api/bootstrap`, `/api/session`, `/api/mode`, `/api/jobs`, `/api/sources/<name>/archive`, `/api/auth`), video streaming
+- `app/server.py` — Flask app factory, JSON API (`/api/bootstrap`, `/api/session`, `/api/mode`, `/api/jobs`, `/api/sources/<name>/archive`, `/api/sources/<name>/delete`, `/api/auth`), video streaming
 - `app/static/js/` — `model.js` (pure segment/match/undo logic), `player.js` (multi-source playback on one time axis), `timeline.js` (draw, zoom, scrub, drag edges), `matches.js` (match cards and form), `names.js` (name suggestions), `queue.js` (upload button, queue), `auth.js` (sign-in state), `mode.js` (Dev / Production switch), `save.js` (autosave retry and stale-session policy), `format.js` (shared text helpers), `api.js`, `main.js` (wiring, shortcuts, autosave)
 - `media_probe.py` — ffprobe: duration, fps, display size, audio, recording time
 - `video_prep.py` — title/description/tags from form fields; thumbnail frame selection within a match's segments
 - `video_overlay.py` — CAFE GAME / THANKS FOR WATCHING overlays and the logo watermark (top right, with CAFE BADMINTON under it, composed into one PNG by `render_logo_badge`) (CAFE and GAME are separate full-frame PNGs that overlay slides in and out with a time-based x; THANKS zooms in from the centre: its PNG is looped for the outro and scaled per frame; the intro never uses a looped input, which would add frames to short videos); builds the single ffmpeg command from segments (`h264_videotoolbox`, falls back to `libx264`). Each segment is seeked half a frame early (its own source's fps) and its timestamps restart at 0, so the cut keeps exactly the frames from `start` up to, not including, `end`; `tests/test_render_integration.py` checks this on frame-numbered clips
 - `thumbnail_enhancement/renderer.py` — renders the styled thumbnail (template B by default)
 - `uploader.py` — resumable YouTube upload (saved session, `num_retries=5`, dropped connections retried on the same session), quota error classification (upload and thumbnail), thumbnail setting, `upload.json`
-- `cleanup.py` — archive a finished workspace; archive a source file
+- `cleanup.py` — archive a finished workspace; archive a source file or move it to the trash
 - `rethumbnail.py` — re-render/re-set thumbnails for archived workspaces (old and new layouts)
 - `auth_service.py` — OAuth (`client_secret.json` → `token.json`), cached sign-in status, background login for the editor
 - `tests/` — pytest suite (`conftest.py` sets `APP_ENV=test` and points `INPUT_DIR`/`COMPLETED_DIR`/`DATA_DIR` at temp paths); `tests/js/` — Node test runner suite (model, names, save, queue, mode)

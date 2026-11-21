@@ -22,7 +22,7 @@ import utils
 from app import store
 from app.jobs import JobQueue
 from app.models import Match, Session, match_problems, validate_session
-from cleanup import archive_source
+from cleanup import archive_source, trash_source
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -172,9 +172,23 @@ def _archivable(session: Session, name: str, status: dict[str, str]) -> bool:
     return bool(using) and all(status.get(m.id) == "done" for m in using)
 
 
+def _deletable(session: Session, name: str, jobs: list[dict]) -> bool:
+    """No match still needs the file: neither one in the editor that is not
+    done nor an unfinished job (its encode reads the source)."""
+    status = {job["match"]["id"]: job["status"] for job in jobs}
+    if any(status.get(m.id) != "done" for m in _matches_using(session, name)):
+        return False
+    return not any(
+        job["status"] != "done"
+        and any(s["source"] == name for s in job["match"]["segments"])
+        for job in jobs
+    )
+
+
 def list_sources(session: Session, queue: JobQueue) -> list[dict]:
     infos = _probe_all()
-    status = _job_status(queue)
+    jobs = queue.snapshot()
+    status = {job["match"]["id"]: job["status"] for job in jobs}
     entries = []
     for name, info in infos.items():
         entry = info.to_dict() if info else {"name": name}
@@ -185,6 +199,9 @@ def list_sources(session: Session, queue: JobQueue) -> list[dict]:
             entries.append({"name": name, "missing": True, "unreadable": False})
     for entry in entries:
         entry["archivable"] = _archivable(session, entry["name"], status)
+        entry["deletable"] = not entry["missing"] and _deletable(
+            session, entry["name"], jobs
+        )
     return sorted(
         entries,
         key=lambda e: (
@@ -481,6 +498,21 @@ def create_app(queue: JobQueue) -> Flask:
                 )
             if on_disk:
                 archive_source(name)
+            _save_next(_drop_source(session, name), session)
+        return jsonify(ok=True)
+
+    @app.post("/api/sources/<name>/delete")
+    def delete_source(name: str):
+        with session_lock:
+            session = store.load_session()
+            if name not in _disk_sources():
+                raise ApiError(404, [f"Không tìm thấy file nguồn {name}"])
+            if not _deletable(session, name, queue.snapshot()):
+                raise ApiError(
+                    409,
+                    [f"File nguồn {name} còn trận chưa upload xong đang dùng"],
+                )
+            trash_source(name)
             _save_next(_drop_source(session, name), session)
         return jsonify(ok=True)
 

@@ -269,6 +269,7 @@ export function createQueue(els, deps, initialJobs) {
       else if (n !== goError.n) goError = null;
     }
     go.textContent = busy ? 'Đang đưa vào hàng đợi…' : goLabel(n, deps.modes[deps.getMode()]);
+    go.dataset.mode = deps.getMode(); // colours the button like the switch (style.css)
     const modeBusy = deps.isModeBusy();
     const modeFailed = deps.isModeFailed();
     go.disabled = goBlocked({ busy, n, signedIn, stale, modeBusy, modeFailed });
