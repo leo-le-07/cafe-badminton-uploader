@@ -243,14 +243,31 @@ def test_failed_render_leaves_no_output_file(sources, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+class _BrokenImage:
+    """Saves bytes ffmpeg cannot decode, so the encode itself fails."""
+
+    def save(self, path):
+        Path(path).write_bytes(b"not a png")
+
+
 def test_ffmpeg_failure_leaves_no_partial_file(sources, tmp_path, monkeypatch):
-    bad_logo = tmp_path / "logo.png"
-    bad_logo.write_bytes(b"not a png")
-    monkeypatch.setattr(config, "LOGO_PATH", bad_logo)
+    monkeypatch.setattr(
+        video_overlay, "render_cafe_game_words", lambda w, h: [_BrokenImage()]
+    )
     out_dir = tmp_path / "ws"
     out = out_dir / "processed.mov"
     with pytest.raises(RuntimeError, match="FFmpeg failed"):
         render_match([Segment("a.mov", 0, 2)], sources, out)
+    assert list(out_dir.iterdir()) == []
+
+
+def test_unreadable_logo_fails_with_a_clear_error(sources, tmp_path, monkeypatch):
+    bad_logo = tmp_path / "logo.png"
+    bad_logo.write_bytes(b"not a png")
+    monkeypatch.setattr(config, "LOGO_PATH", bad_logo)
+    out_dir = tmp_path / "ws"
+    with pytest.raises(RuntimeError, match="Cannot read logo"):
+        render_match([Segment("a.mov", 0, 2)], sources, out_dir / "processed.mov")
     assert list(out_dir.iterdir()) == []
 
 
