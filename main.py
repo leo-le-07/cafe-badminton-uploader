@@ -63,6 +63,7 @@ def serve():
         )
     try:
         store.seed_players_from_completed()
+        store.seed_tournaments_from_completed()
         queue = JobQueue()
         app = server.create_app(queue)
         try:

@@ -41,6 +41,7 @@ Flask server (app/server.py) ── page, original videos via HTTP Range, JSON A
       ├─ session.json   ticked sources, matches, segments, open point, revision (autosaved by the browser)
       ├─ mode.json      mode last chosen in the editor: dev or production
       ├─ players.json   player-name history for suggestions
+      ├─ tournaments.json  recent tournaments as {name, theme}, newest first (recorded on enqueue)
       └─ JobQueue (app/jobs.py): one background thread, one step at a time
              └─ pipeline per match (app/pipeline.py):
                 metadata → select_thumbnail → render_thumbnail
@@ -57,6 +58,7 @@ Flask server (app/server.py) ── page, original videos via HTTP Range, JSON A
 - `upload.json` and the upload session are written atomically; an unreadable `upload.json` raises `CorruptUploadRecordError` and turns the job into an error (never an upload). At startup, archives in `COMPLETED_DIR` whose `upload.json` holds a video id stay locked even if their `job.json` is missing or unreadable.
 - Problems that block queuing (`match_problems` in Python, `matchProblems` in JS) must stay word for word identical; `tests/test_rules_parity.py` runs the same cases through both.
 - `cleanup` deletes `processed.mov` and the upload session, writes `segments.json`, and moves the workspace to `COMPLETED_DIR/<recorded_date>_<match_id>/`. Source files are only moved (to `COMPLETED_DIR/sources/`) when the user presses "Lưu trữ" on a source whose matches are all done, or to the trash when the user presses "Xoá" on a source that no unfinished match (in the editor or the queue) uses.
+- Thumbnail colour: the default tournament ("Cafe Game", or an empty field) is always `CAFE_GAME_THEME`; any other tournament uses the match's `theme`, one of `constants.TOURNAMENT_THEMES` picked with the colour dots under "Giải" (the first one when none is picked; `match_theme` in Python, `isDefaultTournament`/`pickedTheme` in JS). It is stored in `metadata.json` as `theme`; metadata without it (older archives) falls back to the tournament-name rule in `thumbnail_enhancement/common.py`. Picking a tournament from the suggestions brings back the colour it was last uploaded with.
 - The title date is the recording date of the match's first source (`media_probe`), not the upload date. Privacy comes from the job's mode and is set at upload time.
 - The editor plays the original `.mov`/`.mp4` files directly; there is no proxy. `/media/<name>` only serves files that are directly in `INPUT_DIR`.
 - All JSON writes in `app/store.py` are atomic (temp file + `os.replace`); an unreadable file is renamed `*.corrupt-<timestamp>`, never deleted.

@@ -1,4 +1,5 @@
-"""JSON persistence for the editor session, job state and player-name history.
+"""JSON persistence for the editor session, job state and player-name and
+tournament history.
 
 Every write goes to a temp file in the same directory and is then moved into
 place with os.replace, so a crash never leaves a half-written file behind.
@@ -25,9 +26,12 @@ SESSION_FILE = "session.json"
 PLAYERS_FILE = "players.json"
 JOB_FILE = "job.json"
 MODE_FILE = "mode.json"
+TOURNAMENTS_FILE = "tournaments.json"
+TOURNAMENTS_KEPT = 10
 WORKSPACES_DIR = "workspaces"
 
 _players_lock = threading.Lock()
+_tournaments_lock = threading.Lock()
 
 T = TypeVar("T")
 
@@ -206,3 +210,62 @@ def seed_players_from_completed() -> None:
                 continue
             counts.update(name.strip() for name in names if name.strip())
         _write_json(_players_path(), dict(counts))
+
+
+def _tournaments_path() -> Path:
+    return config.DATA_DIR / TOURNAMENTS_FILE
+
+
+def _parse_tournaments(data) -> list[dict]:
+    if not isinstance(data, list) or not all(
+        isinstance(t, dict)
+        and isinstance(t.get("name"), str)
+        and isinstance(t.get("theme"), str)
+        for t in data
+    ):
+        raise TypeError("expected a list of {name, theme}")
+    return [{"name": t["name"], "theme": t["theme"]} for t in data]
+
+
+def load_tournaments() -> list[dict]:
+    """Tournaments as {name, theme}, most recently used first."""
+    return _load(_tournaments_path(), _parse_tournaments) or []
+
+
+def _push_recent(recent: list[dict], used: list[tuple[str, str]]) -> list[dict]:
+    """`used` (name, theme) pairs in use order (last = most recent) moved to
+    the front of `recent`. Names differing only in case count as one; the
+    newest spelling and theme are kept."""
+    for raw, theme in used:
+        name = raw.strip()
+        if not name:
+            continue
+        rest = [t for t in recent if t["name"].casefold() != name.casefold()]
+        recent = [{"name": name, "theme": theme}, *rest]
+    return recent[:TOURNAMENTS_KEPT]
+
+
+def record_tournaments(used: list[tuple[str, str]]) -> None:
+    with _tournaments_lock:
+        _write_json(_tournaments_path(), _push_recent(load_tournaments(), used))
+
+
+def seed_tournaments_from_completed() -> None:
+    """Build the initial tournament history from past uploads; runs only once.
+    Archive folders start with the recording date, so their sorted order is
+    the order of use."""
+    with _tournaments_lock:
+        if _tournaments_path().exists():
+            return
+        used: list[tuple[str, str]] = []
+        for path in sorted(config.COMPLETED_DIR.glob(f"*/{METADATA_FILE}")):
+            try:
+                metadata = _read_json(path)
+                name = metadata["tournament"]
+                theme = metadata.get("theme") or ""
+            except (ValueError, KeyError, TypeError, AttributeError) as e:
+                logger.warning(f"Skipping unreadable {path}: {e}")
+                continue
+            if isinstance(name, str) and isinstance(theme, str):
+                used.append((name, theme))
+        _write_json(_tournaments_path(), _push_recent([], used))

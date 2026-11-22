@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageEnhance
+from constants import THEME_COLORS
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,6 +32,15 @@ def get_theme_for_tournament(tournament_name: str) -> str:
         return STYLE_PURPLE
 
     return RECOGNIZED_TOURNAMENTS.get(normalized, DEFAULT_THEME)
+
+
+def theme_for_metadata(metadata) -> str:
+    """The colour stored with the match; metadata written before colours could
+    be picked gets it from the tournament name, as before."""
+    theme = getattr(metadata, "theme", None)
+    if theme in THEME_COLORS:
+        return theme
+    return get_theme_for_tournament(metadata.tournament.strip())
 
 
 def format_team_name(team_names: list[str]) -> str:

@@ -5,8 +5,10 @@ import {
   addNames,
   foldName,
   nameCounts,
+  recentTournaments,
   splitNames,
   suggestNames,
+  suggestTournaments,
   teamIsFull,
 } from '../../app/static/js/names.js';
 
@@ -83,4 +85,32 @@ test('teamIsFull: đơn đủ 1 người, đôi đủ 2 người', () => {
     assert.equal(teamIsFull(m(type, ['Nam', 'Hùng', 'Tú']), 'team1'), true);
   }
   assert.equal(teamIsFull({ match_type: 'md', team1: ['Nam', 'Hùng'], team2: ['Tú'] }, 'team2'), false);
+});
+
+const withTournament = (tournament, theme = '') => ({ team1: [], team2: [], tournament, theme });
+const t = (name, theme = '') => ({ name, theme });
+
+test('recentTournaments: trận trong phiên (mới nhất trước), rồi lịch sử, rồi mặc định; tối đa 3', () => {
+  const matches = [withTournament('Giải A', 'red'), withTournament(''), withTournament('Tứ Hùng', 'green')];
+  assert.deepEqual(
+    recentTournaments([t('tứ hùng', 'teal'), t('Giải B', 'orange'), t('Giải C')], matches, 'Cafe Game'),
+    [t('Tứ Hùng', 'green'), t('Giải A', 'red'), t('Giải B', 'orange')],
+  );
+  assert.deepEqual(recentTournaments([], [], 'Cafe Game'), [t('Cafe Game')]);
+  assert.deepEqual(
+    recentTournaments(undefined, [{ team1: [], team2: [], tournament: ' Tứ Hùng ' }], 'Cafe Game'),
+    [t('Tứ Hùng'), t('Cafe Game')],
+  );
+});
+
+test('suggestTournaments: ô trống hoặc đã là một tên thì gợi ý các tên còn lại', () => {
+  const recent = [t('Tứ Hùng', 'red'), t('Cafe Game'), t('Giải B')];
+  assert.deepEqual(suggestTournaments('', recent), recent);
+  assert.deepEqual(suggestTournaments('cafe game', recent), [t('Tứ Hùng', 'red'), t('Giải B')]);
+});
+
+test('suggestTournaments: đang gõ thì lọc theo đầu tên, không phân biệt dấu', () => {
+  const recent = [t('Tứ Hùng', 'red'), t('Cafe Game'), t('Giải B')];
+  assert.deepEqual(suggestTournaments('tu', recent), [t('Tứ Hùng', 'red')]);
+  assert.deepEqual(suggestTournaments('xyz', recent), []);
 });

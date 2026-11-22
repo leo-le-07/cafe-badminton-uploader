@@ -90,3 +90,17 @@ class TestAddLogo:
         result = add_logo(img, Path("assets/logo.png"))
         assert result.size == (320, 180)
         assert result.mode in ("RGB", "RGBA")
+
+
+def test_theme_for_metadata_uses_the_stored_colour_else_the_tournament_name():
+    from types import SimpleNamespace
+
+    from thumbnail_enhancement.common import theme_for_metadata
+
+    assert (
+        theme_for_metadata(SimpleNamespace(tournament="Tứ Hùng", theme="red")) == "red"
+    )
+    old = SimpleNamespace(tournament="Tournament X", theme=None)
+    assert theme_for_metadata(old) == "purple"
+    unknown = SimpleNamespace(tournament="Cafe Game", theme="pink")
+    assert theme_for_metadata(unknown) == "blue"

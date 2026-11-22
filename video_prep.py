@@ -82,6 +82,7 @@ def create_metadata_from_fields(
     team2: list[str],
     tournament: str,
     match_date: str,
+    theme: str | None = None,
 ) -> MatchMetadata:
     if match_type not in constants.MATCH_TYPES:
         raise ValueError(f"Invalid match type: {match_type}")
@@ -100,6 +101,7 @@ def create_metadata_from_fields(
         title=title,
         description=description,
         category=constants.CATEGORY_SPORTS,
+        theme=theme,
     )
 
 

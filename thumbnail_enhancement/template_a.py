@@ -11,7 +11,7 @@ from thumbnail_enhancement.common import (
     add_logo,
     enhance_image_visuals,
     format_matchup_text,
-    get_theme_for_tournament,
+    theme_for_metadata,
 )
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
 from logger import get_logger
@@ -248,7 +248,7 @@ def render_thumbnail(video_path: Path) -> str:
     team_2_names = metadata.team2_names
     matchup_text = format_matchup_text(team_1_names, team_2_names)
     tournament = metadata.tournament.strip()
-    decor_style = get_theme_for_tournament(tournament)
+    decor_style = theme_for_metadata(metadata)
 
     img = Image.open(selected_path)
     img = enhance_image_visuals(img)

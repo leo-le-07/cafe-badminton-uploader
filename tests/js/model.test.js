@@ -26,6 +26,8 @@ import {
   recordedDate,
   editorFromStored,
   storedSession,
+  isDefaultTournament,
+  pickedTheme,
 } from '../../app/static/js/model.js';
 
 const SOURCES = [
@@ -58,6 +60,7 @@ function match(id, segments, extra = {}) {
     team2: [],
     tournament: 'Cafe Game',
     segments,
+    theme: '',
     ...extra,
   };
 }
@@ -156,25 +159,26 @@ test('các đoạn của một trận luôn xếp theo thời gian', () => {
   );
 });
 
-test('N đóng đoạn đang mở, tạo và chọn trận mới, kế thừa loại trận trước', () => {
+test('N đóng đoạn đang mở, tạo và chọn trận mới, kế thừa loại trận, giải và màu trước', () => {
   const next = ids();
   let s = editor();
   s = markIn(s, 10, next);
-  s = updateMatch(s, 'm1', { match_type: 'xd', tournament: 'Giải Mùa Thu' });
+  s = updateMatch(s, 'm1', { match_type: 'xd', tournament: 'Giải Mùa Thu', theme: 'red' });
   s = newMatch(s, 20, next);
   assert.equal(s.open, null);
   assert.deepEqual(s.session.matches[0].segments, [{ source: 'a.mov', start: 10, end: 20 }]);
   assert.equal(s.session.matches.length, 2);
   assert.equal(s.session.selected_match_id, 'm2');
-  assert.deepEqual(selected(s), match('m2', [], { match_type: 'xd', tournament: 'Giải Mùa Thu' }));
+  assert.deepEqual(selected(s), match('m2', [], { match_type: 'xd', tournament: 'Giải Mùa Thu', theme: 'red' }));
 });
 
-test('trận đầu tiên dùng loại md và giải mặc định', () => {
-  let s = deepFreeze(createEditor(emptySession(), buildLayout(SOURCES), { tournament: 'CLB Sun' }));
+test('trận đầu tiên dùng loại md, giải và màu mặc định', () => {
+  let s = deepFreeze(createEditor(emptySession(), buildLayout(SOURCES), { tournament: 'CLB Sun', theme: 'green' }));
   s = markIn(s, 10, ids());
-  assert.deepEqual(selected(s), match('m1', [], { tournament: 'CLB Sun' }));
+  assert.deepEqual(selected(s), match('m1', [], { tournament: 'CLB Sun', theme: 'green' }));
   const plain = markIn(editor(), 10, ids());
   assert.equal(selected(plain).tournament, 'Cafe Game');
+  assert.equal(selected(plain).theme, '');
 });
 
 test('mã trận mặc định chỉ gồm chữ thường, số và dấu gạch ngang', () => {
@@ -867,4 +871,17 @@ test('I/O trên đoạn đã đóng và I khi đang mở không bao giờ đặt
     s = markIn(s, t, ids());
     assertOpenOutsideSegments(s);
   }
+});
+
+test('isDefaultTournament: ô trống hoặc Cafe Game (không phân biệt hoa thường) mới là giải mặc định', () => {
+  assert.equal(isDefaultTournament(match('m1', [], { tournament: '' })), true);
+  assert.equal(isDefaultTournament(match('m1', [], { tournament: ' cafe GAME ' })), true);
+  assert.equal(isDefaultTournament(match('m1', [], { tournament: 'Tứ Hùng' })), false);
+});
+
+test('pickedTheme: màu đã chọn, không có hoặc lạ thì lấy màu đầu tiên', () => {
+  const keys = ['purple', 'red'];
+  assert.equal(pickedTheme(match('m1', [], { theme: 'red' }), keys), 'red');
+  assert.equal(pickedTheme(match('m1', [], { theme: '' }), keys), 'purple');
+  assert.equal(pickedTheme(match('m1', [], { theme: 'pink' }), keys), 'purple');
 });

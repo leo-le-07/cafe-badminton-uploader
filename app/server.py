@@ -17,11 +17,19 @@ from werkzeug.exceptions import HTTPException
 
 import auth_service
 import config
+import constants
 import media_probe
 import utils
 from app import store
 from app.jobs import JobQueue
-from app.models import Match, Session, match_problems, validate_session
+from app.models import (
+    Match,
+    Session,
+    match_problems,
+    match_theme,
+    title_fields,
+    validate_session,
+)
 from cleanup import archive_source, trash_source
 from logger import get_logger
 
@@ -74,12 +82,18 @@ def _is_str_list(value) -> bool:
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
 
 
+def _hex(rgb: tuple[int, int, int]) -> str:
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
 def _check_match_shape(m) -> bool:
     if not isinstance(m, dict):
         return False
     if not all(isinstance(m.get(k), str) for k in ("id", "match_type", "tournament")):
         return False
     if not (_is_str_list(m.get("team1")) and _is_str_list(m.get("team2"))):
+        return False
+    if m.get("theme", "") not in ("", *constants.TOURNAMENT_THEMES):
         return False
     segments = m.get("segments")
     return isinstance(segments, list) and all(
@@ -400,15 +414,28 @@ def create_app(queue: JobQueue) -> Flask:
     def bootstrap():
         session = store.load_session()
         players = store.load_players()
+        tournaments = store.load_tournaments()
+        last = tournaments[0] if tournaments else None
         return jsonify(
             auth=auth_payload(),
-            defaults={"tournament": config.DEFAULT_TOURNAMENT},
+            defaults={
+                "tournament": last["name"] if last else config.DEFAULT_TOURNAMENT,
+                "theme": last["theme"] if last else "",
+            },
             mode=store.load_mode(),
             modes=config.MODES,
             sources=list_sources(session, queue),
             session=session.to_dict(),
             jobs=visible_jobs(session),
             players=sorted(players, key=lambda n: (-players[n], n.casefold())),
+            tournaments=tournaments,
+            themes={
+                "cafe_game": _hex(constants.THEME_COLORS[constants.CAFE_GAME_THEME]),
+                "choices": [
+                    {"key": key, "color": _hex(constants.THEME_COLORS[key])}
+                    for key in constants.TOURNAMENT_THEMES
+                ],
+            },
         )
 
     @app.get("/api/sources")
@@ -462,6 +489,13 @@ def create_app(queue: JobQueue) -> Flask:
             except (OSError, subprocess.CalledProcessError) as e:
                 logger.warning(f"Cannot enqueue {ids}: {e!r}")
                 raise ApiError(400, ["Không đọc được file nguồn của trận"])
+        try:
+            # An empty field is uploaded as the default tournament.
+            store.record_tournaments(
+                [(title_fields(j.match)[2], match_theme(j.match)) for j in created]
+            )
+        except Exception as e:
+            logger.warning(f"Could not record tournaments of {ids}: {e!r}")
         return jsonify([job.to_dict() for job in created])
 
     def job_action(action, match_id: str):

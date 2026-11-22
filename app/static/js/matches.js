@@ -6,8 +6,11 @@
 // Every edit goes through model.js via dispatch, so it is undoable and saved.
 
 import {
+  DEFAULT_TOURNAMENT,
+  isDefaultTournament,
   keptDuration,
   matchProblems,
+  pickedTheme,
   previewTitle,
   recordedDate,
   removeMatch,
@@ -15,7 +18,15 @@ import {
   updateMatch,
 } from './model.js';
 import { formatLength, pad } from './format.js';
-import { addNames, nameCounts, splitNames, suggestNames, teamIsFull } from './names.js';
+import {
+  addNames,
+  nameCounts,
+  recentTournaments,
+  splitNames,
+  suggestNames,
+  suggestTournaments,
+  teamIsFull,
+} from './names.js';
 import { matchColor } from './timeline.js';
 
 const TYPES = ['ms', 'md', 'ws', 'wd', 'xd'];
@@ -53,7 +64,9 @@ const EDITABLE = `
     <label class="chips" data-side="team2"><span class="list"></span><input type="text" spellcheck="false" autocomplete="off" aria-label="Đội 2"></label>
   </div>
   <div class="sugg" hidden></div>
-  <div class="row2">Giải: <input class="inp" type="text" spellcheck="false" autocomplete="off" aria-label="Giải"></div>
+  <div class="row2">Giải: <input class="inp" type="text" spellcheck="false" autocomplete="off" aria-label="Giải" placeholder="${DEFAULT_TOURNAMENT}"></div>
+  <div class="sugg tsugg" hidden></div>
+  <div class="themes" hidden></div>
   <div class="warn" hidden></div>
   <div class="title-prev">Tiêu đề: <span></span></div>`;
 
@@ -65,6 +78,7 @@ const LOCKED = `
     <div class="chips ro"><span class="list"></span></div>
   </div>
   <div class="row2">Giải: <span class="inp ro"></span></div>
+  <div class="themes" hidden></div>
   <div class="title-prev">Tiêu đề: <span></span></div>`;
 
 // `deps`: {dispatch, getState, getLocked, getOpenMatchId}.
@@ -74,11 +88,13 @@ export function createMatches(container, deps) {
   const list = container.querySelector('.cards');
   const empty = container.querySelector('.empty');
   const cards = new Map(); // match id -> card
-  let ctx = { players: [], locked: new Set(), recordedDates: {} };
+  let ctx = { players: [], tournaments: [], themes: { choices: [] }, locked: new Set(), recordedDates: {} };
   let state = null;
   let lastSelected = null;
   // Suggestions of the focused chip input: {card, side, items, index}.
   let sugg = null;
+  // Suggestions of the focused tournament input: {card, items, index}.
+  let tsugg = null;
 
   const matchOf = (id) => state.session.matches.find((m) => m.id === id);
 
@@ -100,11 +116,24 @@ export function createMatches(container, deps) {
       lists: [...el.querySelectorAll('.chips .list')],
       inputs: locked ? [] : [...el.querySelectorAll('.chips input')],
       tournament: q('.row2 .inp'),
-      sugg: q('.sugg'),
+      sugg: q('.sugg:not(.tsugg)'),
+      tsugg: q('.tsugg'),
       warn: q('.warn'),
       preview: q('.title-prev span'),
       shown: {},
     };
+    card.themes = q('.themes');
+    card.dots = ctx.themes.choices.map(({ key, color }) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dot';
+      b.dataset.theme = key;
+      b.style.setProperty('--dot', color);
+      b.title = 'Màu thumbnail';
+      b.disabled = locked;
+      return b;
+    });
+    card.themes.replaceChildren(...card.dots);
     if (locked) for (const b of card.types) b.disabled = true;
     return card;
   }
@@ -129,6 +158,13 @@ export function createMatches(container, deps) {
     if (card.locked) setText(card.tournament, match.tournament);
     else if (document.activeElement !== card.tournament && card.tournament.value !== match.tournament) {
       card.tournament.value = match.tournament;
+    }
+    // Only a tournament other than the default picks its thumbnail colour.
+    const keys = ctx.themes.choices.map((c) => c.key);
+    card.themes.hidden = keys.length === 0 || isDefaultTournament(match);
+    if (!card.themes.hidden) {
+      const picked = pickedTheme(match, keys);
+      for (const b of card.dots) b.classList.toggle('on', b.dataset.theme === picked);
     }
     if (card.warn) {
       const text = warningText(matchProblems(match, deps.getOpenMatchId()));
@@ -156,6 +192,7 @@ export function createMatches(container, deps) {
         const fresh = build(match, locked);
         card.el.replaceWith(fresh.el);
         if (sugg && sugg.card === card) sugg = null;
+        if (tsugg && tsugg.card === card) tsugg = null;
         card = fresh;
         cards.set(match.id, card);
       }
@@ -172,6 +209,7 @@ export function createMatches(container, deps) {
         card.el.remove();
         cards.delete(id);
         if (sugg && sugg.card === card) sugg = null;
+        if (tsugg && tsugg.card === card) tsugg = null;
       }
     }
     const selected = state.session.selected_match_id;
@@ -181,6 +219,7 @@ export function createMatches(container, deps) {
       if (card && !card.el.contains(document.activeElement)) card.el.scrollIntoView({ block: 'nearest' });
     }
     if (sugg) showSuggestions(sugg.card, sugg.side, sugg.index);
+    if (tsugg) showTournaments(tsugg.card, tsugg.index);
   }
 
   // ------------------------------------------------------------ editing
@@ -252,6 +291,44 @@ export function createMatches(container, deps) {
     sugg = null;
   }
 
+  // The few most recent tournaments, for the focused tournament input.
+  function showTournaments(card, index = -1) {
+    const input = card.tournament;
+    if (!input || card.locked || document.activeElement !== input) return hideTournaments();
+    const others = state.session.matches.filter((m) => m.id !== card.id);
+    const recent = recentTournaments(ctx.tournaments, others, DEFAULT_TOURNAMENT);
+    const items = suggestTournaments(input.value, recent);
+    if (tsugg && tsugg.card !== card) tsugg.card.tsugg.hidden = true;
+    tsugg = { card, items, index: Math.min(index, items.length - 1) };
+    const box = card.tsugg;
+    if (items.length === 0) {
+      box.hidden = true;
+      return;
+    }
+    const label = document.createElement('span');
+    label.textContent = 'Gợi ý: ';
+    box.replaceChildren(label, ...items.map((t, i) => {
+      const u = document.createElement('u');
+      u.textContent = t.name;
+      u.dataset.index = i;
+      if (i === tsugg.index) u.className = 'on';
+      return u;
+    }));
+    box.hidden = false;
+  }
+
+  function hideTournaments() {
+    if (tsugg) tsugg.card.tsugg.hidden = true;
+    tsugg = null;
+  }
+
+  // A suggestion brings back the tournament's name and the colour it had.
+  function pickTournament(card, entry) {
+    card.tournament.value = entry.name;
+    update(card.id, { tournament: entry.name, theme: entry.theme });
+    showTournaments(card);
+  }
+
   // ------------------------------------------------------------ events
 
   container.addEventListener('click', (e) => {
@@ -263,9 +340,19 @@ export function createMatches(container, deps) {
       remove(card);
       return;
     }
+    if (button && button.dataset.theme && !card.locked) {
+      select(card.id);
+      update(card.id, { theme: button.dataset.theme });
+      return;
+    }
     if (button && button.dataset.type && !card.locked) {
       select(card.id);
       update(card.id, { match_type: button.dataset.type });
+      return;
+    }
+    const t = e.target.closest('.tsugg u');
+    if (t) {
+      if (tsugg && tsugg.card === card) pickTournament(card, tsugg.items[Number(t.dataset.index)]);
       return;
     }
     const u = e.target.closest('.sugg u');
@@ -289,6 +376,7 @@ export function createMatches(container, deps) {
     if (!card || e.target.tagName !== 'INPUT') return;
     select(card.id);
     if (card.inputs.includes(e.target)) showSuggestions(card, sideOf(e.target));
+    else if (e.target === card.tournament) showTournaments(card);
   });
 
   // IME composition: nothing is split or committed while a syllable is being
@@ -317,6 +405,7 @@ export function createMatches(container, deps) {
 
   container.addEventListener('focusout', (e) => {
     const card = cardOf(e.target);
+    if (card && e.target === card.tournament && tsugg && tsugg.card === card) hideTournaments();
     if (!card || !card.inputs.includes(e.target)) return;
     if (discarding === e.target) {
       discarding = null;
@@ -352,6 +441,7 @@ export function createMatches(container, deps) {
     if (!card) return;
     if (e.target === card.tournament) {
       update(card.id, { tournament: e.target.value });
+      showTournaments(card);
       return;
     }
     if (!card.inputs.includes(e.target)) return;
@@ -375,6 +465,7 @@ export function createMatches(container, deps) {
 
   container.addEventListener('keydown', (e) => {
     const card = cardOf(e.target);
+    if (card && e.target === card.tournament) return tournamentKey(card, e);
     if (!card || !card.inputs.includes(e.target)) return;
     if (e.isComposing || e.keyCode === 229 || composing.has(e.target)) return; // the IME owns this key
     const input = e.target;
@@ -414,6 +505,22 @@ export function createMatches(container, deps) {
       next.focus();
     }
   });
+
+  // Up/Down walk the tournament suggestions, Enter takes the highlighted one.
+  function tournamentKey(card, e) {
+    if (e.isComposing || e.keyCode === 229) return; // the IME owns this key
+    const own = tsugg && tsugg.card === card ? tsugg : null;
+    if (!own || !own.items.length) return;
+    const n = own.items.length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const index = e.key === 'ArrowDown' ? (own.index + 1) % n : (own.index <= 0 ? n - 1 : own.index - 1);
+      showTournaments(card, index);
+    } else if (e.key === 'Enter' && own.index >= 0) {
+      e.preventDefault();
+      pickTournament(card, own.items[own.index]);
+    }
+  }
 
   return {
     render,

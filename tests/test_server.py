@@ -115,6 +115,7 @@ def match(id, *segments, team1=("Nam",), team2=("Tú",)):
         "segments": [
             {"source": src, "start": start, "end": end} for src, start, end in segments
         ],
+        "theme": "",
     }
 
 
@@ -208,10 +209,12 @@ def test_bootstrap_shape(client):
         "session",
         "jobs",
         "players",
+        "tournaments",
+        "themes",
     }
     assert body["mode"] == "dev"
     assert body["modes"] == {"dev": "private", "production": "public"}
-    assert body["defaults"] == {"tournament": config.DEFAULT_TOURNAMENT}
+    assert body["defaults"] == {"tournament": config.DEFAULT_TOURNAMENT, "theme": ""}
     assert body["session"] == {
         "sources": [],
         "matches": [],
@@ -220,6 +223,15 @@ def test_bootstrap_shape(client):
         "revision": 0,
     }
     assert body["auth"] == SIGNED_OUT
+    assert body["tournaments"] == []
+    assert body["themes"]["cafe_game"] == "#003c96"
+    assert [c["key"] for c in body["themes"]["choices"]] == [
+        "purple",
+        "red",
+        "green",
+        "orange",
+        "teal",
+    ]
 
 
 def test_sources_sorted_by_recorded_at_with_problems_last(client):
@@ -625,6 +637,50 @@ def test_enqueue_without_a_valid_mode_is_refused(client, source, signed_in, body
     assert r.status_code == 400
     assert r.json["errors"] == ["Chế độ upload không hợp lệ, hãy tải lại trang"]
     assert statuses(client) == {}
+
+
+def test_enqueue_records_tournaments_and_the_newest_becomes_the_default(
+    client, source, signed_in
+):
+    m1 = {
+        **match("m1", ("a.mov", 0, 10)),
+        "tournament": " Tứ Hùng Tournament ",
+        "theme": "green",
+    }
+    m2 = match("m2", ("a.mov", 10, 20))  # empty: uploaded as the default
+    put(client, session(["a.mov"], m1, m2))
+
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m2"], "mode": "dev"}).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"}).status_code
+        == 200
+    )
+
+    body = client.get("/api/bootstrap").json
+    assert body["tournaments"] == [
+        {"name": "Tứ Hùng Tournament", "theme": "green"},
+        {"name": config.DEFAULT_TOURNAMENT, "theme": "blue"},
+    ]
+    assert body["defaults"] == {"tournament": "Tứ Hùng Tournament", "theme": "green"}
+
+
+def test_session_refuses_an_unknown_theme(client):
+    m1 = {**match("m1"), "theme": "pink"}
+    assert put(client, session([], m1)).status_code == 400
+    assert put(client, session([], {**m1, "theme": "red"})).status_code == 200
+
+
+def test_refused_enqueue_records_no_tournament(client, source):
+    m1 = {**match("m1", ("a.mov", 0, 10)), "tournament": "Giải X"}
+    put(client, session(["a.mov"], m1))
+    assert (
+        client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"}).status_code
+        == 409
+    )
+    assert client.get("/api/bootstrap").json["tournaments"] == []
 
 
 def test_enqueue_stamps_the_mode_on_the_job(client, source, signed_in):

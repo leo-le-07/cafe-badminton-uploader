@@ -15,7 +15,7 @@ import utils
 import video_overlay
 import video_prep
 from app import store
-from app.models import JOB_STEPS, Job, title_fields
+from app.models import JOB_STEPS, Job, match_theme, title_fields
 from custom_exceptions import VideoAlreadyUploadedError
 from logger import get_logger
 from schemas import UploadedRecord
@@ -60,7 +60,12 @@ def _metadata(job: Job, vp: Path, progress: Progress) -> None:
         return
     names1, names2, tournament = title_fields(job.match)
     metadata = video_prep.create_metadata_from_fields(
-        job.match.match_type, names1, names2, tournament, job.recorded_date
+        job.match.match_type,
+        names1,
+        names2,
+        tournament,
+        job.recorded_date,
+        theme=match_theme(job.match),
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     video_prep.store(vp, metadata)

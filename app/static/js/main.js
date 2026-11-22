@@ -467,7 +467,13 @@ function load(data) {
 }
 
 function renderMatches() {
-  matchesView.render(state, { players: boot.players, locked, recordedDates: recordedDates() });
+  matchesView.render(state, {
+    players: boot.players,
+    tournaments: boot.tournaments ?? [],
+    themes: boot.themes ?? { choices: [] },
+    locked,
+    recordedDates: recordedDates(),
+  });
   if (queue) queue.renderGo();
 }
 

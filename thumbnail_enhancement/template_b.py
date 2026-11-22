@@ -4,9 +4,10 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from thumbnail_enhancement.common import (
     enhance_image_visuals,
     format_team_name,
-    get_theme_for_tournament,
+    theme_for_metadata,
 )
 from utils import get_metadata, get_selected_candidate_path, get_thumbnail_path
+from constants import THEME_COLORS
 from logger import get_logger
 from custom_exceptions import MissingThumbnailDataError
 
@@ -21,17 +22,15 @@ FONT_PATH = Path("assets/Montserrat-ExtraBold.ttf")
 COLOR_BLACK = (0, 0, 0)
 COLOR_WHITE = (255, 255, 255)
 
-# Sidebar Background Options
+# Sidebar Background Options: every picked colour has white text.
 SIDEBAR_STYLES = {
-    "blue": {
-        "bg": (0, 60, 150),  # Deep Navy
-        "text_main": (255, 255, 255),
-        "tournament_color": (255, 255, 255),
-    },
-    "purple": {
-        "bg": (40, 10, 60),  # Deep Purple
-        "text_main": (255, 255, 255),
-        "tournament_color": (255, 255, 255),
+    **{
+        key: {
+            "bg": rgb,
+            "text_main": (255, 255, 255),
+            "tournament_color": (255, 255, 255),
+        }
+        for key, rgb in THEME_COLORS.items()
     },
     "white": {
         "bg": (240, 240, 240),  # Light Grey/White
@@ -330,7 +329,7 @@ def render_thumbnail(video_path: Path) -> str:
     final_img.paste(right_img, (sidebar_w, 0))
 
     tournament = metadata.tournament.strip()
-    style_key = get_theme_for_tournament(tournament)
+    style_key = theme_for_metadata(metadata)
 
     # 2. Prepare and Paste Sidebar Background & Text
     sidebar = draw_sidebar_background(sidebar_w, CANVAS_H, style_key)

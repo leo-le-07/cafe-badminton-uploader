@@ -10,6 +10,9 @@ class MatchMetadata:
     title: str
     description: str
     category: str
+    # Thumbnail colour (a constants.THEME_COLORS key); None in metadata written
+    # before it existed, whose colour comes from the tournament name.
+    theme: str | None = None
 
 
 @dataclass(frozen=True)

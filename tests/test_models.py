@@ -2,6 +2,7 @@ import pytest
 
 import video_prep
 from app.models import (
+    match_theme,
     Job,
     Match,
     OpenPoint,
@@ -194,3 +195,32 @@ def test_job_without_a_known_mode_is_dev(stored):
     if stored is not None:
         d["mode"] = stored
     assert Job.from_dict(d).mode == "dev"
+
+
+@pytest.mark.parametrize(
+    "tournament, theme, expected",
+    [
+        ("", "red", "blue"),
+        (" cafe game ", "red", "blue"),
+        ("Tứ Hùng", "red", "red"),
+        ("Tứ Hùng", "", "purple"),
+        ("Tứ Hùng", "pink", "purple"),
+    ],
+)
+def test_match_theme(tournament, theme, expected):
+    m = Match(
+        id="m1",
+        match_type="md",
+        team1=[],
+        team2=[],
+        tournament=tournament,
+        segments=[],
+        theme=theme,
+    )
+    assert match_theme(m) == expected
+
+
+def test_match_without_theme_loads_with_none_picked():
+    d = {"id": "m1", "match_type": "md", "team1": [], "team2": []}
+    m = Match.from_dict({**d, "tournament": "X", "segments": []})
+    assert m.theme == "" and m.to_dict()["theme"] == ""

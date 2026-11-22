@@ -12,7 +12,7 @@
 const EPS = 1e-6;
 const UNDO_LIMIT = 200;
 const DEFAULT_FPS = 30;
-const DEFAULT_TOURNAMENT = 'Cafe Game';
+export const DEFAULT_TOURNAMENT = 'Cafe Game';
 const NO_LOCKS = new Set();
 
 // ---------------------------------------------------------------- timeline
@@ -127,7 +127,7 @@ export function createEditor(session, layout, defaults = {}) {
     layout,
     open: null,
     undo: [],
-    defaults: { tournament: defaults.tournament ?? DEFAULT_TOURNAMENT },
+    defaults: { tournament: defaults.tournament ?? DEFAULT_TOURNAMENT, theme: defaults.theme ?? '' },
   };
 }
 
@@ -197,6 +197,7 @@ function addMatch(state, session, id) {
     team2: [],
     tournament: previous ? previous.tournament : state.defaults.tournament,
     segments: [],
+    theme: previous ? (previous.theme ?? '') : state.defaults.theme,
   };
   return { ...session, matches: [...session.matches, created], selected_match_id: id };
 }
@@ -330,7 +331,7 @@ export function moveEdge(state, matchId, segIndex, edge, t, locked = NO_LOCKS) {
 
 // ---------------------------------------------------------------- matches
 
-const EDITABLE_FIELDS = ['match_type', 'team1', 'team2', 'tournament'];
+const EDITABLE_FIELDS = ['match_type', 'team1', 'team2', 'tournament', 'theme'];
 
 function sameValue(a, b) {
   if (Array.isArray(a) && Array.isArray(b)) {
@@ -489,6 +490,19 @@ const names = (team) => team.map((n) => n.trim()).filter(Boolean);
 
 // The YouTube title. Mirrors app.models.match_title: names trimmed, empty
 // ones dropped, the default tournament when it is empty.
+// Whether the match is in the default tournament (an empty field counts),
+// whose thumbnail colour is fixed. Mirrors match_theme in app/models.py.
+export function isDefaultTournament(match) {
+  const tournament = match.tournament.trim() || DEFAULT_TOURNAMENT;
+  return tournament.toLocaleLowerCase('vi') === DEFAULT_TOURNAMENT.toLocaleLowerCase('vi');
+}
+
+// The colour key the thumbnail of a non-default tournament gets: the picked
+// one, else the first of `choices` (keys in order).
+export function pickedTheme(match, choices) {
+  return choices.includes(match.theme) ? match.theme : choices[0];
+}
+
 export function previewTitle(match, date) {
   const tournament = match.tournament.trim() || DEFAULT_TOURNAMENT;
   return `${names(match.team1).join('/')} vs ${names(match.team2).join('/')} | ${tournament} (${date})`;

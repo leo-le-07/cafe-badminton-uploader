@@ -156,6 +156,12 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 .sugg[hidden], .warn[hidden] { display: none; }
 .sugg u { text-decoration: none; border: 1px dashed var(--line); border-radius: 3px; padding: 0 6px; margin-right: 4px; color: var(--text); cursor: pointer; }
 .sugg u.on, .sugg u:hover { border-style: solid; border-color: var(--accent); }
+.themes { display: flex; gap: 8px; margin-top: 6px; }
+.themes[hidden] { display: none; }
+.themes .dot { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 2px solid transparent; background: var(--dot); box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.themes .dot.on { border-color: var(--text); }
+.themes .dot:disabled { cursor: default; }
+.themes .dot:disabled:not(.on) { display: none; }
 .row2 { display: flex; gap: 6px; margin-top: 8px; align-items: center; font-size: 12px; color: var(--muted); }
 .row2 .inp { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; color: var(--text); font: inherit; font-size: 12px; outline: 0; }
 .row2 input.inp:focus { border-color: var(--accent); }

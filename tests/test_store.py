@@ -11,11 +11,14 @@ from app.store import (
     load_mode,
     load_players,
     load_session,
+    load_tournaments,
     record_players,
+    record_tournaments,
     save_job,
     save_mode,
     save_session,
     seed_players_from_completed,
+    seed_tournaments_from_completed,
     workspace_dir,
 )
 
@@ -141,6 +144,57 @@ def test_seed_players_from_completed_runs_once(tmp_path, monkeypatch):
     seed_players_from_completed()
 
     assert load_players() == {"An": 1, "Bình": 1}
+
+
+def test_record_tournaments_keeps_most_recent_first_without_case_duplicates():
+    record_tournaments([("Cafe Game", "blue"), ("Tứ Hùng", "purple")])
+    record_tournaments([("tứ hùng", "red"), (" ", "teal")])
+    assert load_tournaments() == [
+        {"name": "tứ hùng", "theme": "red"},
+        {"name": "Cafe Game", "theme": "blue"},
+    ]
+
+
+def test_record_tournaments_keeps_a_bounded_history():
+    record_tournaments([(f"Giải {i}", "red") for i in range(30)])
+    recent = load_tournaments()
+    assert recent[0]["name"] == "Giải 29" and len(recent) == 10
+
+
+def test_seed_tournaments_from_completed_runs_once_in_date_order(tmp_path, monkeypatch):
+    completed = tmp_path / "completed"
+    for folder, metadata in [
+        ("2026-11-21_b", {"tournament": "Tứ Hùng", "theme": "green"}),
+        ("2026-11-20_a", {"tournament": "Cafe Game"}),  # written before themes
+    ]:
+        (completed / folder).mkdir(parents=True)
+        (completed / folder / "metadata.json").write_text(
+            json.dumps(metadata), encoding="utf-8"
+        )
+    (completed / "2026-11-22_c").mkdir()
+    (completed / "2026-11-22_c" / "metadata.json").write_text("{ broken")
+    monkeypatch.setattr(config, "COMPLETED_DIR", completed)
+
+    seed_tournaments_from_completed()
+    record_tournaments([("Giải X", "red")])
+    seed_tournaments_from_completed()
+
+    assert load_tournaments() == [
+        {"name": "Giải X", "theme": "red"},
+        {"name": "Tứ Hùng", "theme": "green"},
+        {"name": "Cafe Game", "theme": ""},
+    ]
+
+
+@pytest.mark.parametrize(
+    "content", ["{ half written", '{"Nam": 1}', '["Nam"]', '[{"name": "Nam"}]']
+)
+def test_corrupt_tournaments_file_gives_empty(tmp_path, content):
+    (tmp_path / "tournaments.json").write_text(content)
+    assert load_tournaments() == []
+    assert [p.read_text() for p in tmp_path.glob("tournaments.json.corrupt-*")] == [
+        content
+    ]
 
 
 @pytest.mark.parametrize("content", ["{ half written", '{"match": {}}'])

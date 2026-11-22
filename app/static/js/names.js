@@ -2,6 +2,7 @@
 // No DOM; inputs are never mutated.
 
 const SUGGESTION_LIMIT = 5;
+const TOURNAMENT_LIMIT = 3;
 
 const lower = (s) => s.toLocaleLowerCase('vi');
 
@@ -70,4 +71,32 @@ export function addNames(match, side, names) {
 export function teamIsFull(match, side) {
   const size = match.match_type === 'ms' || match.match_type === 'ws' ? 1 : 2;
   return match[side].length >= size;
+}
+
+// Tournaments as {name, theme}, most recent first, at most `limit`: those of
+// this session's `matches` (later cards are newer), then the server's
+// `history` (most recent first), then `fallback`. Empty names are skipped;
+// names that differ only in case count as one, under the newest spelling.
+export function recentTournaments(history, matches, fallback, limit = TOURNAMENT_LIMIT) {
+  const seen = new Set();
+  const out = [];
+  const typed = [...matches].reverse().map((m) => ({ name: m.tournament, theme: m.theme ?? '' }));
+  for (const entry of [...typed, ...(history ?? []), { name: fallback, theme: '' }]) {
+    const name = (entry.name ?? '').trim();
+    if (!name || seen.has(lower(name))) continue;
+    seen.add(lower(name));
+    out.push({ name, theme: entry.theme ?? '' });
+  }
+  return out.slice(0, limit);
+}
+
+// Which of `recent` to offer for a tournament input holding `value`: all the
+// others when it is empty or already one of them, else those starting with it
+// (case- and diacritic-insensitive).
+export function suggestTournaments(value, recent) {
+  const v = foldName(value.trim());
+  if (v === '' || recent.some((t) => foldName(t.name) === v)) {
+    return recent.filter((t) => foldName(t.name) !== v);
+  }
+  return recent.filter((t) => foldName(t.name).startsWith(v));
 }

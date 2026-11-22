@@ -2,8 +2,10 @@ import re
 from dataclasses import asdict, dataclass
 
 from constants import (
+    CAFE_GAME_THEME,
     DEFAULT_MODE,
     DEFAULT_TOURNAMENT,
+    TOURNAMENT_THEMES,
     MATCH_TYPES,
     MAX_TITLE_LENGTH,
     MODES,
@@ -44,6 +46,9 @@ class Match:
     team2: list[str]
     tournament: str
     segments: list[Segment]
+    # Thumbnail colour for a tournament other than the default; "" = not
+    # picked. See match_theme.
+    theme: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -57,6 +62,7 @@ class Match:
             team2=list(d["team2"]),
             tournament=d["tournament"],
             segments=[Segment.from_dict(s) for s in d["segments"]],
+            theme=d.get("theme", ""),
         )
 
 
@@ -227,6 +233,15 @@ def title_fields(match: Match) -> tuple[list[str], list[str], str]:
 
     tournament = match.tournament.strip() or DEFAULT_TOURNAMENT
     return names(match.team1), names(match.team2), tournament
+
+
+def match_theme(match: Match) -> str:
+    """The thumbnail colour: the default tournament's own colour, else the
+    picked one (the first choice when none or an unknown one is picked)."""
+    tournament = title_fields(match)[2]
+    if tournament.casefold() == DEFAULT_TOURNAMENT.casefold():
+        return CAFE_GAME_THEME
+    return match.theme if match.theme in TOURNAMENT_THEMES else TOURNAMENT_THEMES[0]
 
 
 def match_title(match: Match, date: str) -> str:
