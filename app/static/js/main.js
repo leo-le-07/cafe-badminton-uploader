@@ -106,6 +106,8 @@ function renderAll() {
 
 function setSaveStatus(kind, text, detail = '') {
   const pill = $('save-pill');
+  // Autosave is silent; the pill only shows when a save fails.
+  pill.hidden = kind !== 'error';
   pill.textContent = text;
   pill.title = detail;
   pill.classList.toggle('bad', kind === 'error');
