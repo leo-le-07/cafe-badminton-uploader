@@ -21,14 +21,25 @@
     <button type="button" id="stale-reload">Tải lại</button>
   </div>
 
-  <aside>
+  <aside id="sources-panel">
     <div class="src-head">
       <h4>Video trong input/</h4>
-      <button type="button" id="sources-refresh" title="Tải lại danh sách video trong thư mục input" aria-label="Tải lại danh sách video">↻</button>
+      <div class="src-head-acts">
+        <button type="button" id="sources-add" title="Chọn một hoặc nhiều video để chép vào thư mục input (file gốc giữ nguyên)">+ Thêm</button>
+        <button type="button" id="sources-refresh" title="Tải lại danh sách video trong thư mục input" aria-label="Tải lại danh sách video">↻</button>
+      </div>
+      <input type="file" id="sources-file" accept=".mov,.mp4,video/quicktime,video/mp4" multiple hidden>
     </div>
     <p class="hint err" id="sources-error" role="alert" hidden>Chưa tải lại được danh sách, hãy thử lại.</p>
+    <div class="adding" id="sources-adding" role="status" hidden>
+      <div class="adding-text"></div>
+      <div class="bar"><div></div></div>
+    </div>
+    <p class="hint err" id="sources-add-error" role="alert" hidden></p>
     <div id="sources"></div>
     <p class="hint">Tick nhiều file để nối chúng thành một timeline liên tục theo thứ tự quay. Đây là cách ghép 2 recording của cùng một trận.</p>
+    <p class="hint">Bấm “+ Thêm” hoặc kéo thả video vào cột này để chép vào thư mục input.</p>
+    <div class="drop-hint" aria-hidden="true">Thả video vào đây để chép vào input/</div>
   </aside>
 
   <main>

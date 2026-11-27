@@ -65,13 +65,17 @@ export function rowActions(job) {
   return actions;
 }
 
-const ACTION_LABELS = { retry: 'Thử lại', unqueue: 'Đưa về chỉnh sửa' };
+// "Dọn trận đã xong": shown while the queue lists a finished match.
+export const doneCount = (jobs) => jobs.filter((j) => j.status === 'done').length;
+export const cleanLabel = (n) => `Dọn ${n} trận đã xong`;
+
+const ACTION_LABELS ={ retry: 'Thử lại', unqueue: 'Đưa về chỉnh sửa' };
 
 const safeLink = (url) => (typeof url === 'string' && /^https:\/\//.test(url) ? url : null);
 
 // `els`: {go, note, panel}. `deps`: {getState, getLocked, getOpenMatchId,
 // isStale, isSignedIn, getMode, modes, isModeBusy, isModeFailed, saveNow,
-// onLocked(ids), onDone(), onSignedOut()}. `modes` maps mode -> privacy.
+// onLocked(ids), onDone(), onSignedOut(), onCleanup()}. `modes` maps mode -> privacy.
 export function createQueue(els, deps, initialJobs) {
   const { go, note, panel } = els;
   let jobs = [];
@@ -88,10 +92,32 @@ export function createQueue(els, deps, initialJobs) {
   let lockKey = null;
   let failedPolls = 0;
 
-  panel.innerHTML = '<h4>Hàng đợi</h4><p class="offline" role="status" hidden>Mất kết nối với ứng dụng — đang thử lại…</p><div class="jobs"></div><p class="hint empty">Chưa có trận nào trong hàng đợi.</p>';
+  panel.innerHTML = '<div class="queue-head"><h4>Hàng đợi</h4><button type="button" class="clean" title="Bỏ các trận đã upload xong khỏi danh sách trận và hàng đợi, cùng các file đã bị xoá khỏi thư mục input" hidden></button></div><p class="offline" role="status" hidden>Mất kết nối với ứng dụng — đang thử lại…</p><div class="jobs"></div><p class="hint empty">Chưa có trận nào trong hàng đợi.</p>';
   const list = panel.querySelector('.jobs');
   const empty = panel.querySelector('.empty');
   const offline = panel.querySelector('.offline');
+  const clean = panel.querySelector('.clean');
+  let cleaning = false;
+
+  function renderClean() {
+    const n = doneCount(jobs);
+    clean.hidden = n === 0;
+    clean.textContent = cleaning ? 'Đang dọn…' : cleanLabel(n);
+    clean.disabled = cleaning || deps.isStale();
+  }
+
+  clean.addEventListener('click', async () => {
+    clean.blur();
+    if (cleaning || deps.isStale()) return;
+    cleaning = true;
+    renderClean();
+    try {
+      await deps.onCleanup();
+    } finally {
+      cleaning = false;
+      renderClean();
+    }
+  });
 
   function renderConnection() {
     const lost = connectionLost(failedPolls);
@@ -222,6 +248,7 @@ export function createQueue(els, deps, initialJobs) {
       }
     }
     empty.hidden = jobs.length > 0;
+    renderClean();
   }
 
   async function act(kind, id) {
@@ -288,6 +315,7 @@ export function createQueue(els, deps, initialJobs) {
     if (note.textContent !== text) note.textContent = text;
     note.title = detail;
     note.classList.toggle('err', !!goError || stale || modeFailed);
+    renderClean();
   }
 
   async function enqueue() {

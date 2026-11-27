@@ -42,6 +42,16 @@ h4 { margin: 0 0 8px; font-size: 11px; letter-spacing: .08em; text-transform: up
 .src-head button { font: inherit; font-size: 14px; line-height: 1; padding: 3px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; white-space: nowrap; }
 .src-head button:hover { color: var(--text); border-color: var(--muted); }
 .src-head button:disabled { opacity: .5; cursor: default; }
+.src-head-acts { display: flex; gap: 6px; }
+.src-head #sources-add { font-size: 12px; padding: 4px 8px; color: var(--text); }
+/* copying videos into input/ */
+aside { position: relative; }
+.adding { margin-bottom: 8px; font-size: 12px; color: var(--text); word-break: break-all; }
+.adding[hidden] { display: none; }
+.adding .bar { height: 4px; margin-top: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.adding .bar div { height: 100%; width: 0; background: var(--accent); }
+.drop-hint { display: none; position: absolute; inset: 6px; border: 2px dashed var(--accent); border-radius: 8px; background: rgba(0, 0, 0, .7); color: var(--accent); font-weight: 600; text-align: center; align-items: center; justify-content: center; padding: 16px; pointer-events: none; z-index: 10; }
+aside.dragging .drop-hint { display: flex; }
 .src { padding: 8px; border-radius: 6px; border: 1px solid var(--line); margin-bottom: 6px; background: var(--panel2); cursor: pointer; user-select: none; word-break: break-all; }
 .src.on { border-color: var(--accent); }
 .src small { display: block; color: var(--muted); font-size: 12px; }
@@ -178,6 +188,12 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-wi
 .go-note:empty { display: none; }
 .go-note.err { color: var(--m3); }
 .queue { border-top: 1px solid var(--line); padding: 12px; background: var(--bg); max-height: 40%; overflow: auto; flex-shrink: 0; }
+.queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.queue-head h4 { margin: 0; }
+.queue-head .clean { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; white-space: nowrap; }
+.queue-head .clean:hover { border-color: var(--muted); }
+.queue-head .clean:disabled { color: var(--muted); cursor: default; }
+.queue-head .clean[hidden] { display: none; }
 .queue .empty { margin: 0; }
 .queue .empty[hidden] { display: none; }
 .job { font-size: 12px; margin-bottom: 8px; }

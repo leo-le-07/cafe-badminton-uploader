@@ -4,3 +4,4 @@ import './names.test.js';
 import './save.test.js';
 import './queue.test.js';
 import './mode.test.js';
+import './upload.test.js';

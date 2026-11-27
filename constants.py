@@ -19,10 +19,10 @@ THEME_COLORS = {
     "red": (150, 20, 35),
     "green": (10, 95, 60),
     "orange": (205, 95, 10),
-    "teal": (0, 110, 120),
+    "yellow": (210, 160, 0),
 }
 CAFE_GAME_THEME = "blue"
-TOURNAMENT_THEMES = ("purple", "red", "green", "orange", "teal")
+TOURNAMENT_THEMES = ("purple", "red", "green", "orange", "yellow")
 
 # Upload mode chosen in the editor -> YouTube privacy. Privacy is the only
 # thing the two modes differ in.

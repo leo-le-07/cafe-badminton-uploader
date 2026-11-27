@@ -5,7 +5,7 @@
 
 // The server refuses changes without this header, so another website cannot
 // make the browser change anything here (app/server.py, EDITOR_HEADER).
-const EDITOR_HEADER = { 'X-Cafe-Editor': '1' };
+export const EDITOR_HEADER = { 'X-Cafe-Editor': '1' };
 
 async function request(method, path, body, { keepalive = false } = {}) {
   const init = { method, keepalive, headers: { ...EDITOR_HEADER } };
@@ -53,7 +53,8 @@ export const setMode = (mode) => request('PUT', '/api/mode', { mode });
 export const enqueue = (ids, mode) => request('POST', '/api/jobs', { match_ids: ids, mode });
 export const retry = (id) => request('POST', `/api/jobs/${part(id)}/retry`);
 export const unqueue = (id) => request('POST', `/api/jobs/${part(id)}/unqueue`);
-export const archiveSource = (name) => request('POST', `/api/sources/${part(name)}/archive`);
+export const cleanupDone = () => request('POST', '/api/cleanup');
+export const archiveSource =(name) => request('POST', `/api/sources/${part(name)}/archive`);
 export const deleteSource = (name) => request('POST', `/api/sources/${part(name)}/delete`);
 export const authStatus = () => request('GET', '/api/auth');
 export const login = () => request('POST', '/api/auth/login');

@@ -1,3 +1,4 @@
+import io
 import threading
 import time
 from unittest.mock import MagicMock
@@ -230,7 +231,7 @@ def test_bootstrap_shape(client):
         "red",
         "green",
         "orange",
-        "teal",
+        "yellow",
     ]
 
 
@@ -842,6 +843,135 @@ def test_archive_source_moves_file_and_drops_it_from_session(client, queue, sign
     run_until_idle(queue)
     assert client.post("/api/sources/b.mov/archive").status_code == 200
     assert stored_content() == session([])
+
+
+# ---- cleanup of finished matches -----------------------------------------------
+
+
+def test_cleanup_drops_done_matches_and_missing_files(client, queue, signed_in):
+    add_source("a.mov")
+    add_source("b.mov")
+    add_source("c.mp4")
+    put(
+        client,
+        session(
+            ["a.mov", "b.mov", "c.mp4"],
+            match("m1", ("a.mov", 0, 10)),
+            match("m2", ("b.mov", 0, 10)),
+            match("m3", ("b.mov", 20, 30)),
+            match("m4", ("c.mp4", 0, 10)),
+            selected="m1",
+        ),
+    )
+    client.post("/api/jobs", json={"match_ids": ["m1", "m2", "m4"], "mode": "dev"})
+    run_until_idle(queue)
+    # The user deletes a.mov and b.mov outside the app; c.mp4 stays.
+    (config.INPUT_DIR / "a.mov").unlink()
+    (config.INPUT_DIR / "b.mov").unlink()
+    revision = store.load_session().revision
+
+    r = client.post("/api/cleanup")
+
+    assert r.status_code == 200
+    assert r.json == {
+        "matches": ["m1", "m2", "m4"],
+        "sources": ["a.mov"],  # b.mov: m3 still has a segment in it
+        "revision": revision + 1,
+    }
+    stored = store.load_session()
+    assert stored.revision == revision + 1
+    assert stored.sources == ["b.mov", "c.mp4"]
+    assert [m.id for m in stored.matches] == ["m3"]
+    assert stored.selected_match_id is None
+    assert statuses(client) == {}  # done jobs outside the session are not listed
+    sources = {s["name"]: s for s in client.get("/api/sources").json}
+    # Its match was cleared, but c.mp4 can still be archived or deleted.
+    assert sources["c.mp4"]["archivable"] is True
+    assert sources["c.mp4"]["deletable"] is True
+    # The client saves the session back unchanged: still valid.
+    assert put(client, stored.to_dict()).status_code == 200
+
+
+def test_cleanup_with_nothing_done_stores_nothing(client, queue, signed_in, source):
+    put(client, session(["a.mov"], match("m1", ("a.mov", 0, 10))))
+    client.post("/api/jobs", json={"match_ids": ["m1"], "mode": "dev"})
+    revision = store.load_session().revision
+
+    r = client.post("/api/cleanup")
+
+    assert r.json == {"matches": [], "sources": [], "revision": revision}
+    assert store.load_session().revision == revision
+    assert [m.id for m in store.load_session().matches] == ["m1"]
+
+
+def test_cleanup_keeps_the_open_point_of_a_match_left(client, source):
+    put(
+        client,
+        session(
+            ["a.mov"],
+            match("m1", ("a.mov", 0, 10)),
+            open={"match_id": "m1", "source": "a.mov", "time": 20},
+        ),
+    )
+    client.post("/api/cleanup")
+    assert store.load_session().open is not None
+
+
+def test_cleanup_needs_editor_header(bare_client):
+    assert bare_client.post("/api/cleanup").status_code == 403
+
+
+def test_api_answers_are_not_cached(client):
+    assert client.get("/api/sources").headers["Cache-Control"] == "no-store"
+
+
+# ---- add a source from the editor ----------------------------------------------
+
+
+def input_files():
+    return sorted(p.name for p in config.INPUT_DIR.iterdir())
+
+
+def test_add_source_copies_the_file_with_its_time(client):
+    data = b"video bytes" * 1000
+    r = client.put("/api/sources/IMG_1.MOV?mtime=1764200000.5", data=data)
+
+    assert r.status_code == 201
+    path = config.INPUT_DIR / "IMG_1.MOV"
+    assert path.read_bytes() == data
+    assert path.stat().st_mtime == 1764200000.5
+    assert input_files() == ["IMG_1.MOV"]  # no temp file left behind
+    assert [s["name"] for s in client.get("/api/sources").json] == ["IMG_1.MOV"]
+
+
+def test_add_source_never_overwrites(client, source):
+    before = source.read_bytes()
+    r = client.put("/api/sources/a.mov", data=b"other")
+    assert r.status_code == 409
+    assert source.read_bytes() == before
+    assert input_files() == ["a.mov"]
+
+
+@pytest.mark.parametrize(
+    "name", [".hidden.mov", "notes.txt", "clip", "a\\b.mov", "..%2Fx.mov"]
+)
+def test_add_source_refuses_bad_names(client, name):
+    r = client.put(f"/api/sources/{name}", data=b"x")
+    assert r.status_code in (400, 404)
+    assert input_files() == []
+
+
+def test_add_source_refuses_a_cut_short_transfer():
+    # The browser announced 10 bytes, the connection dropped after 5.
+    with pytest.raises(server.ApiError) as e:
+        server.add_source_file("a.mov", io.BytesIO(b"short"), 10, None)
+    assert e.value.status == 400
+    assert input_files() == []
+
+
+def test_add_source_needs_editor_header(bare_client):
+    assert bare_client.put("/api/sources/a.mov", data=b"x").status_code == 403
+    assert input_files() == []
 
 
 # ---- delete (to the trash) -----------------------------------------------------

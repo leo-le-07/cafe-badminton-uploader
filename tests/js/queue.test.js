@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { connectionLost, goBlocked, goLabel, jobPrivacy, rowActions } from '../../app/static/js/queue.js';
+import { cleanLabel, connectionLost, doneCount, goBlocked, goLabel, jobPrivacy, rowActions } from '../../app/static/js/queue.js';
 
 test('mất kết nối chỉ báo sau 2 lần hỏi hàng đợi thất bại liên tiếp', () => {
   assert.equal(connectionLost(0), false);
@@ -43,4 +43,11 @@ test('không upload được khi mode đang được lưu hoặc vừa đổi th
   assert.equal(goBlocked({ ...ok, signedIn: false }), true);
   assert.equal(goBlocked({ ...ok, stale: true }), true);
   assert.equal(goBlocked({ ...ok, busy: true }), true);
+});
+
+test('nút dọn đếm các trận đã xong trong hàng đợi', () => {
+  const jobs = [{ status: 'done' }, { status: 'queued' }, { status: 'done' }, { status: 'error' }];
+  assert.equal(doneCount(jobs), 2);
+  assert.equal(doneCount([]), 0);
+  assert.equal(cleanLabel(2), 'Dọn 2 trận đã xong');
 });

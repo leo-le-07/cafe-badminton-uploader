@@ -7,8 +7,10 @@ hold one lock, so concurrent requests on Flask's threaded server cannot
 interleave.
 """
 
+import os
 import subprocess
 import threading
+import uuid
 from dataclasses import replace
 from pathlib import Path
 
@@ -173,6 +175,55 @@ def _probe_all() -> dict[str, media_probe.SourceInfo | None]:
     return infos
 
 
+COPY_CHUNK = 1024 * 1024
+# One check-then-rename at a time, so two copies of the same name cannot both
+# land (the second would overwrite the first).
+_add_lock = threading.Lock()
+
+
+def _check_new_source_name(name: str) -> None:
+    if (
+        not name
+        or name != Path(name).name
+        or "\\" in name
+        or name.startswith(".")
+        or Path(name).suffix.lower() not in utils.SUPPORTED_VIDEO_EXTENSIONS
+    ):
+        raise ApiError(
+            400, [f"Tên file {name!r} không hợp lệ: chỉ nhận .mov hoặc .mp4"]
+        )
+
+
+def add_source_file(name: str, stream, length: int | None, mtime: float | None) -> Path:
+    """Copy an uploaded video into INPUT_DIR as `name`, never overwriting a
+    file there. The copy is written to a hidden temp file first, so a broken
+    transfer never shows up as a source. `mtime` (seconds) is put back on the
+    copy: it is the recording time of files without one in their metadata."""
+    _check_new_source_name(name)
+    dest = config.INPUT_DIR / name
+    if dest.exists():
+        raise ApiError(409, [f"Đã có file {name} trong thư mục input"])
+    tmp = config.INPUT_DIR / f".{name}.{uuid.uuid4().hex}.part"
+    try:
+        written = 0
+        with open(tmp, "xb") as out:
+            while chunk := stream.read(COPY_CHUNK):
+                out.write(chunk)
+                written += len(chunk)
+        if length is not None and written != length:
+            raise ApiError(400, [f"Chép {name} bị gián đoạn, hãy thử lại"])
+        if mtime is not None:
+            os.utime(tmp, (mtime, mtime))
+        with _add_lock:
+            if dest.exists():
+                raise ApiError(409, [f"Đã có file {name} trong thư mục input"])
+            os.rename(tmp, dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+    logger.info(f"Added source {name} ({written} bytes) to {config.INPUT_DIR}")
+    return dest
+
+
 def _job_status(queue: JobQueue) -> dict[str, str]:
     return {job["match"]["id"]: job["status"] for job in queue.snapshot()}
 
@@ -181,9 +232,19 @@ def _matches_using(session: Session, name: str) -> list[Match]:
     return [m for m in session.matches if any(s.source == name for s in m.segments)]
 
 
-def _archivable(session: Session, name: str, status: dict[str, str]) -> bool:
+def _archivable(session: Session, name: str, jobs: list[dict]) -> bool:
+    """Every match in the editor using the file is done, and at least one
+    finished match used it: one still in the editor, or one already cleared
+    from it by "Dọn trận đã xong" (its job is still listed)."""
+    status = {job["match"]["id"]: job["status"] for job in jobs}
     using = _matches_using(session, name)
-    return bool(using) and all(status.get(m.id) == "done" for m in using)
+    if any(status.get(m.id) != "done" for m in using):
+        return False
+    return bool(using) or any(
+        job["status"] == "done"
+        and any(s["source"] == name for s in job["match"]["segments"])
+        for job in jobs
+    )
 
 
 def _deletable(session: Session, name: str, jobs: list[dict]) -> bool:
@@ -202,7 +263,6 @@ def _deletable(session: Session, name: str, jobs: list[dict]) -> bool:
 def list_sources(session: Session, queue: JobQueue) -> list[dict]:
     infos = _probe_all()
     jobs = queue.snapshot()
-    status = {job["match"]["id"]: job["status"] for job in jobs}
     entries = []
     for name, info in infos.items():
         entry = info.to_dict() if info else {"name": name}
@@ -212,7 +272,7 @@ def list_sources(session: Session, queue: JobQueue) -> list[dict]:
         if name not in infos:
             entries.append({"name": name, "missing": True, "unreadable": False})
     for entry in entries:
-        entry["archivable"] = _archivable(session, entry["name"], status)
+        entry["archivable"] = _archivable(session, entry["name"], jobs)
         entry["deletable"] = not entry["missing"] and _deletable(
             session, entry["name"], jobs
         )
@@ -342,6 +402,31 @@ def _drop_source(session: Session, name: str) -> Session:
     )
 
 
+def _clear_done(
+    session: Session, status: dict[str, str], on_disk: set[str]
+) -> tuple[Session, list[str], list[str]]:
+    """Drop the finished matches from the editor, and the ticked files that
+    are gone from INPUT_DIR and no longer used by any match left. Files still
+    on disk stay ticked: the user archives or deletes them."""
+    done = [m.id for m in session.matches if status.get(m.id) == "done"]
+    matches = [m for m in session.matches if m.id not in done]
+    used = {s.source for m in matches for s in m.segments}
+    dropped = [n for n in session.sources if n not in on_disk and n not in used]
+    ids = {m.id for m in matches}
+    selected = session.selected_match_id if session.selected_match_id in ids else None
+    open = session.open
+    if open is not None and (open.match_id not in ids or open.source in dropped):
+        open = None
+    cleared = Session(
+        sources=[n for n in session.sources if n not in dropped],
+        matches=matches,
+        selected_match_id=selected,
+        open=open,
+        revision=session.revision,
+    )
+    return cleared, done, dropped
+
+
 def _save_next(session: Session, base: Session) -> int:
     """Store `session` as the revision after `base`'s; returns it."""
     revision = base.revision + 1
@@ -395,7 +480,8 @@ def create_app(queue: JobQueue) -> Flask:
 
     @app.after_request
     def no_store(response):
-        if request.path == "/" or request.path.startswith("/static/"):
+        # /api/ answers follow INPUT_DIR and the queue: never reuse an old one.
+        if request.path == "/" or request.path.startswith(("/static/", "/api/")):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -516,6 +602,27 @@ def create_app(queue: JobQueue) -> Flask:
         with session_lock:
             return job_action(queue.unqueue, match_id)
 
+    @app.post("/api/cleanup")
+    def cleanup_done():
+        with session_lock:
+            session = store.load_session()
+            cleared, done, dropped = _clear_done(
+                session, _job_status(queue), set(_disk_sources())
+            )
+            revision = session.revision
+            if done or dropped:
+                revision = _save_next(cleared, session)
+        return jsonify(matches=done, sources=dropped, revision=revision)
+
+    @app.put("/api/sources/<name>")
+    def add_source(name: str):
+        # The body is the raw file, streamed to disk (videos are several GB).
+        mtime = request.args.get("mtime", type=float)
+        if mtime is not None and not (0 < mtime < 1e11):
+            mtime = None
+        add_source_file(name, request.stream, request.content_length, mtime)
+        return jsonify(ok=True), 201
+
     @app.post("/api/sources/<name>/archive")
     def archive(name: str):
         with session_lock:
@@ -523,7 +630,7 @@ def create_app(queue: JobQueue) -> Flask:
             on_disk = name in _disk_sources()
             if not on_disk and name not in session.sources:
                 raise ApiError(404, [f"Không tìm thấy file nguồn {name}"])
-            if not _archivable(session, name, _job_status(queue)):
+            if not _archivable(session, name, queue.snapshot()):
                 raise ApiError(
                     409,
                     [

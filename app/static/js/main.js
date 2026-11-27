@@ -30,6 +30,7 @@ import { createPlayer, formatTimecode } from './player.js';
 import { createQueue } from './queue.js';
 import { isStaleSessionError, isTransientSaveError, saveRetryDelay } from './save.js';
 import { createTimeline, matchColor } from './timeline.js';
+import { createUploader } from './upload.js';
 
 export { matchColor };
 
@@ -204,15 +205,50 @@ async function deleteSource(name) {
   await reload();
 }
 
-async function refreshSources() {
+// "Dọn trận đã xong": the server drops the finished matches (and the ticked
+// files already gone from INPUT_DIR) from the stored session, so the editor
+// is reloaded from the server afterwards, like after archiving.
+async function cleanupDone() {
+  if (staleError) return;
   try {
-    boot.sources = await api.listSources();
-  } catch {
-    return false; // the next finished job, press of "Tải lại" or reload tries again
+    await saveNow();
+    await api.cleanupDone();
+  } catch (err) {
+    window.alert(`Không dọn được các trận đã xong: ${err.message}`);
+    return;
   }
+  await reload();
+}
+
+let sourcesKey = '';
+
+async function refreshSources() {
+  let next;
+  try {
+    next = await api.listSources();
+  } catch {
+    return false; // the next poll, finished job, press of "Tải lại" or reload tries again
+  }
+  const key = JSON.stringify(next);
+  if (key === sourcesKey) return true; // nothing changed: keep the list as it is
+  sourcesKey = key;
+  boot.sources = next;
   renderSources();
   renderMatches();
   return true;
+}
+
+// Files added to or removed from INPUT_DIR outside the app show up on their
+// own: when the tab comes back into view and every few seconds while shown.
+const SOURCES_POLL_MS = 5000;
+
+function watchSources() {
+  const poll = () => {
+    if (document.visibilityState === 'visible') refreshSources();
+  };
+  setInterval(poll, SOURCES_POLL_MS);
+  window.addEventListener('focus', poll);
+  document.addEventListener('visibilitychange', poll);
 }
 
 // "Tải lại": picks up files added to (or removed from) INPUT_DIR without
@@ -454,6 +490,7 @@ function flushOnLeave() {
 // longer stale: saving, upload and archive work again.
 function load(data) {
   boot = data;
+  sourcesKey = JSON.stringify(boot.sources);
   const infos = new Map(readableInfos().map((s) => [s.name, s]));
   const layout = buildLayout(boot.session.sources.filter((n) => infos.has(n)).map((n) => infos.get(n)));
   ({ state, hiddenOpen } = editorFromStored(boot.session, layout, boot.defaults));
@@ -515,7 +552,26 @@ async function start() {
   player.onTime(renderPlayhead);
 
   $('sources-refresh').addEventListener('click', onRefreshSources);
-  auth = createAuth($('auth'), boot.auth, () => queue && queue.renderGo());
+  createUploader(
+    {
+      button: $('sources-add'),
+      input: $('sources-file'),
+      panel: $('sources-panel'),
+      status: $('sources-adding'),
+      error: $('sources-add-error'),
+    },
+    {
+      getSourceNames: () => boot.sources.filter((s) => !s.missing).map((s) => s.name),
+      onAdded: refreshSources,
+    },
+  );
+  // A file dropped anywhere else would make the browser open it in place of the editor.
+  for (const type of ['dragover', 'drop']) {
+    window.addEventListener(type, (e) => {
+      if ([...(e.dataTransfer?.types ?? [])].includes('Files')) e.preventDefault();
+    });
+  }
+  auth =createAuth($('auth'), boot.auth, () => queue && queue.renderGo());
   const modeState = createModeState(boot.mode, api.setMode);
   createModeToggle($('mode'), {
     modes: boot.modes,
@@ -539,6 +595,7 @@ async function start() {
       onLocked: setLocked,
       onDone: refreshSources,
       onSignedOut: () => auth.refresh(),
+      onCleanup: cleanupDone,
     },
     boot.jobs,
   );
@@ -546,6 +603,7 @@ async function start() {
   onEnterKey((id) => matchesView.focusTeam1(id));
   renderAll();
   queue.startPolling();
+  watchSources();
 
   $('stale-reload').addEventListener('click', () => window.location.reload());
   $('sources').addEventListener('click', (e) => {

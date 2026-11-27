@@ -93,7 +93,7 @@ const t = (name, theme = '') => ({ name, theme });
 test('recentTournaments: trận trong phiên (mới nhất trước), rồi lịch sử, rồi mặc định; tối đa 3', () => {
   const matches = [withTournament('Giải A', 'red'), withTournament(''), withTournament('Tứ Hùng', 'green')];
   assert.deepEqual(
-    recentTournaments([t('tứ hùng', 'teal'), t('Giải B', 'orange'), t('Giải C')], matches, 'Cafe Game'),
+    recentTournaments([t('tứ hùng', 'yellow'), t('Giải B', 'orange'), t('Giải C')], matches, 'Cafe Game'),
     [t('Tứ Hùng', 'green'), t('Giải A', 'red'), t('Giải B', 'orange')],
   );
   assert.deepEqual(recentTournaments([], [], 'Cafe Game'), [t('Cafe Game')]);

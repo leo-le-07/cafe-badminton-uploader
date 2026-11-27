@@ -148,7 +148,7 @@ def test_seed_players_from_completed_runs_once(tmp_path, monkeypatch):
 
 def test_record_tournaments_keeps_most_recent_first_without_case_duplicates():
     record_tournaments([("Cafe Game", "blue"), ("Tứ Hùng", "purple")])
-    record_tournaments([("tứ hùng", "red"), (" ", "teal")])
+    record_tournaments([("tứ hùng", "red"), (" ", "yellow")])
     assert load_tournaments() == [
         {"name": "tứ hùng", "theme": "red"},
         {"name": "Cafe Game", "theme": "blue"},
